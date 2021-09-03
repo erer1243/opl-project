@@ -20,5 +20,20 @@ j0tests = [ (J0Num 1, 1)
           , (J0Mult (J0Mult (J0Mult (J0Num 2) (J0Num 2)) (J0Num 2)) (J0Num 2), 16)
           , (J0Mult (J0Plus (J0Num 10) (J0Num 10)) (J0Mult (J0Num 2) (J0Num 2)), 80) ]
 
+j0interp :: J0Expr -> Integer
+j0interp (J0Num n) = n
+j0interp (J0Plus lhs rhs) = j0interp lhs + j0interp rhs
+j0interp (J0Mult lhs rhs) = j0interp lhs * j0interp rhs
+
+j0check :: J0Expr -> Integer -> Bool
+j0check expr ans = j0interp expr == ans
+
+j0runTask3Tests :: IO ()
+j0runTask3Tests = do
+    let testResults = map (uncurry j0check) j0tests
+    let numSuccesses = length $ filter id testResults
+    let numFailures = length j0tests - numSuccesses
+    putStrLn $ show numSuccesses ++ " successes and " ++ show numFailures ++ " failures"
+
 main :: IO ()
-main = putStrLn $ j0pp $ J0Plus (J0Num 1) (J0Mult (J0Num 2) (J0Num 3))
+main = j0runTask3Tests
