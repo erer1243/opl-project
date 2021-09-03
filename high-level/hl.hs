@@ -1,6 +1,13 @@
+-- For SExpr overloading
+{-# LANGUAGE OverloadedStrings, OverloadedLists, TypeFamilies #-}
+
+-- For SExpr overloading
+import GHC.Exts (IsList(..))
+import Data.String (IsString(..))
+
 data JExpr = JNum Integer | JPlus JExpr JExpr | JMult JExpr JExpr
 
-data SExpr = SESym String | SENum Integer | SEList [SExpr]
+data SExpr = SESym String | SENum Integer | SEList [SExpr] deriving (Show, Eq)
 
 pp :: JExpr -> String
 pp (JNum n) = show n
@@ -32,10 +39,32 @@ check expr ans = interp expr == ans
 
 runTests :: IO ()
 runTests = do
-    let testResults = map (uncurry check) tests
+    let testJExprs = error "desugar implemented in next commit"
+    let testResults = map (uncurry check) testJExprs
     let numSuccesses = length $ filter id testResults
     let numFailures = length tests - numSuccesses
     putStrLn $ show numSuccesses ++ " successes and " ++ show numFailures ++ " failures"
 
 main :: IO ()
 main = runTests
+
+-- Enable conversion from number literals into SENum
+-- Only fromInteger is needed so the rest is left undefined
+instance Num SExpr where
+    fromInteger = SENum
+    (+) = undefined
+    (*) = undefined
+    (-) = undefined
+    abs = undefined
+    signum = undefined
+
+-- Enable conversion from string literals into SESym by OverloadedStrings
+instance IsString SExpr where
+    fromString = SESym
+
+-- Enable conversion from list literals into SEList by OverloadedLists
+-- Only fromList is needed so the rest is left broken
+instance IsList SExpr where
+    type Item SExpr = SExpr
+    fromList = SEList
+    toList = undefined
