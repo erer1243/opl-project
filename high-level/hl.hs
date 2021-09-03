@@ -19,8 +19,26 @@ interp (JNum n) = n
 interp (JPlus lhs rhs) = interp lhs + interp rhs
 interp (JMult lhs rhs) = interp lhs * interp rhs
 
-check :: JExpr -> Integer -> Bool
-check expr ans = interp expr == ans
+desugar :: SExpr -> JExpr
+desugar (SEList l) = case l of
+    -- +/* base cases
+    [SESym "+"] -> JNum 0
+    [SESym "*"] -> JNum 1
+    -- +/* recursive cases
+    (plus@(SESym "+"):sexpr:rest) -> JPlus (desugar sexpr) (desugar (SEList (plus : rest)))
+    (mult@(SESym "*"):sexpr:rest) -> JMult (desugar sexpr) (desugar (SEList (mult : rest)))
+    -- negation/subtraction
+    [SESym "-", SENum n] -> JNum (negate n)
+    [SESym "-", SENum lhs, SENum rhs] -> JPlus (JNum lhs) (JNum (negate rhs))
+    _ -> undefined
+desugar (SENum n) = JNum n
+desugar (SESym s) = undefined
+
+checkJExpr :: JExpr -> Integer -> Bool
+checkJExpr expr ans = interp expr == ans
+
+checkSExpr :: SExpr -> Integer -> Bool
+checkSExpr expr = checkJExpr (desugar expr)
 
 -- [(program, expected_answer)]
 tests :: [(SExpr, Integer)]
@@ -35,12 +53,13 @@ tests = [ (1, 1)
         , (["+", ["*", 1, -1], 3], 2)
         , (["*", ["+", 5, 10, -1], 2], 28)
         , (["*", 2, 2, 2, 2], 16)
-        , (["*", ["+", 10, 10], ["*", 2, 2]], 80) ]
+        , (["*", ["+", 10, 10], ["*", 2, 2]], 80)
+        , (["-", 3], -3)
+        , (["-", 10, 20], -10) ]
 
 runTests :: IO ()
 runTests = do
-    let testJExprs = error "desugar implemented in next commit"
-    let testResults = map (uncurry check) testJExprs
+    let testResults = map (uncurry checkSExpr) tests
     let numSuccesses = length $ filter id testResults
     let numFailures = length tests - numSuccesses
     putStrLn $ show numSuccesses ++ " successes and " ++ show numFailures ++ " failures"
