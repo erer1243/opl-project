@@ -5,7 +5,7 @@
 import GHC.Exts (IsList(..))
 import Data.String (IsString(..))
 
-data JExpr = JNum Integer | JPlus JExpr JExpr | JMult JExpr JExpr
+data JExpr = JNum Integer | JPlus JExpr JExpr | JMult JExpr JExpr deriving (Show)
 
 data SExpr = SESym String | SENum Integer | SEList [SExpr] deriving (Show, Eq)
 
