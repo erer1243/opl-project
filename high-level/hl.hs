@@ -14,6 +14,14 @@ pp (JNum n) = show n
 pp (JPlus lhs rhs) = "(+ " ++ pp lhs ++ " " ++ pp rhs ++ ")"
 pp (JMult lhs rhs) = "(* " ++ pp lhs ++ " " ++ pp rhs ++ ")"
 
+interp :: JExpr -> Integer
+interp (JNum n) = n
+interp (JPlus lhs rhs) = interp lhs + interp rhs
+interp (JMult lhs rhs) = interp lhs * interp rhs
+
+check :: JExpr -> Integer -> Bool
+check expr ans = interp expr == ans
+
 -- [(program, expected_answer)]
 tests :: [(SExpr, Integer)]
 tests = [ (1, 1)
@@ -28,14 +36,6 @@ tests = [ (1, 1)
         , (["*", ["+", 5, 10, -1], 2], 28)
         , (["*", 2, 2, 2, 2], 16)
         , (["*", ["+", 10, 10], ["*", 2, 2]], 80) ]
-
-interp :: JExpr -> Integer
-interp (JNum n) = n
-interp (JPlus lhs rhs) = interp lhs + interp rhs
-interp (JMult lhs rhs) = interp lhs * interp rhs
-
-check :: JExpr -> Integer -> Bool
-check expr ans = interp expr == ans
 
 runTests :: IO ()
 runTests = do
