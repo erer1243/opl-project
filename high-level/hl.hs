@@ -1,5 +1,7 @@
 data JExpr = JNum Integer | JPlus JExpr JExpr | JMult JExpr JExpr
 
+data SExpr = SESym String | SENum Integer | SEList [SExpr]
+
 pp :: JExpr -> String
 pp (JNum n) = show n
 pp (JPlus lhs rhs) = "(+ " ++ pp lhs ++ " " ++ pp rhs ++ ")"
