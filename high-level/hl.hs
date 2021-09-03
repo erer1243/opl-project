@@ -49,12 +49,13 @@ main :: IO ()
 main = runTests
 
 -- Enable conversion from number literals into SENum
--- Only fromInteger is needed so the rest is left undefined
+-- Only fromInteger and negate are needed so the rest is left undefined
 instance Num SExpr where
     fromInteger = SENum
+    negate (SENum n) = SENum (negate n)
+    negate _ = undefined
     (+) = undefined
     (*) = undefined
-    (-) = undefined
     abs = undefined
     signum = undefined
 
