@@ -15,19 +15,19 @@ pp (JPlus lhs rhs) = "(+ " ++ pp lhs ++ " " ++ pp rhs ++ ")"
 pp (JMult lhs rhs) = "(* " ++ pp lhs ++ " " ++ pp rhs ++ ")"
 
 -- [(program, expected_answer)]
-tests :: [(JExpr, Integer)]
-tests = [ (JNum 1, 1)
-        , (JNum (-1), -1)
-        , (JPlus (JNum 1) (JNum 1), 2)
-        , (JMult (JNum 2) (JNum 3), 6)
-        , (JMult (JNum (-1)) (JNum 3), -3)
-        , (JMult (JPlus (JNum 1) (JNum 10)) (JNum 3), 33)
-        , (JMult (JPlus (JNum 1) (JNum (-1))) (JNum 3), 0)
-        , (JPlus (JPlus (JNum 1) (JNum (-1))) (JNum 3), 3)
-        , (JPlus (JMult (JNum 1) (JNum (-1))) (JNum 3), 2)
-        , (JMult (JPlus (JPlus (JNum 5) (JNum 10)) (JNum (-1))) (JNum 2), 28)
-        , (JMult (JMult (JMult (JNum 2) (JNum 2)) (JNum 2)) (JNum 2), 16)
-        , (JMult (JPlus (JNum 10) (JNum 10)) (JMult (JNum 2) (JNum 2)), 80) ]
+tests :: [(SExpr, Integer)]
+tests = [ (1, 1)
+        , (-1, -1)
+        , (["+", 1, 1], 2)
+        , (["*", 2, 3], 6)
+        , (["*", -1, 3], -3)
+        , (["*", ["+", 1, 10], 3], 33)
+        , (["*", ["+", 1, -1], 3], 0)
+        , (["+", 1, -1, 3], 3)
+        , (["+", ["*", 1, -1], 3], 2)
+        , (["*", ["+", 5, 10, -1], 2], 28)
+        , (["*", 2, 2, 2, 2], 16)
+        , (["*", ["+", 10, 10], ["*", 2, 2]], 80) ]
 
 interp :: JExpr -> Integer
 interp (JNum n) = n
