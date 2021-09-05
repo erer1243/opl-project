@@ -41,19 +41,37 @@ interp (JPlus lhs rhs) = interp lhs + interp rhs
 interp (JMult lhs rhs) = interp lhs * interp rhs
 
 desugar :: SExpr -> JExpr
+desugar (SENum n) = JVal $ JNum n
 desugar (SEList l) = case l of
     -- +/* base cases
-    [SESym "+"] -> JNum 0
-    [SESym "*"] -> JNum 1
+    [SESym "+"] -> toJNum 0
+    [SESym "*"] -> toJNum 1
     -- +/* recursive cases
-    (plus@(SESym "+"):sexpr:rest) -> JPlus (desugar sexpr) (desugar (SEList (plus : rest)))
-    (mult@(SESym "*"):sexpr:rest) -> JMult (desugar sexpr) (desugar (SEList (mult : rest)))
-    -- negation/subtraction
-    [SESym "-", SENum n] -> JNum (negate n)
-    [SESym "-", SENum lhs, SENum rhs] -> JPlus (JNum lhs) (JNum (negate rhs))
-    _ -> undefined
-desugar (SENum n) = JNum n
-desugar (SESym s) = undefined
+    (plus@(SESym "+"):head:tail) -> JApply (JVal JPlus) [desugar head,
+                                                         desugar $ SEList $ plus : tail]
+    (mult@(SESym "*"):head:tail) -> JApply (JVal JMult) [desugar head,
+                                                         desugar $ SEList $ mult : tail]
+    -- negation
+    [SESym "-", SENum n] -> toJNum $ negate n
+    -- other prims
+    [sym@(SESym _), SENum lhs, SENum rhs] -> JApply (desugar sym) [toJNum lhs, toJNum rhs]
+    [SESym "if", ec, et, ef] -> JIf (desugar ec) (desugar et) (desugar ef)
+    l -> error $ "bad SEList " ++ show l
+  where
+    toJNum = JVal . JNum
+desugar (SESym s) = JVal $ case s of
+    "+" -> JPlus
+    "-" -> JMinus
+    "*" -> JMult
+    "/" -> JDiv
+    "=" -> JEq
+    "<" -> JLt
+    ">" -> JGt
+    "<=" -> JLtEq
+    ">=" -> JGtEq
+    "true" -> JBool True
+    "false" -> JBool False
+    s -> error $ "bad SESym " ++ s
 
 checkJExpr :: JExpr -> JValue -> Bool
 checkJExpr expr ans = interp expr == ans
