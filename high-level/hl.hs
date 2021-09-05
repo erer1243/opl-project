@@ -5,14 +5,35 @@
 import GHC.Exts (IsList(..))
 import Data.String (IsString(..))
 
-data JExpr = JNum Integer | JPlus JExpr JExpr | JMult JExpr JExpr deriving (Show)
+data JExpr = JVal JValue
+           | JIf JExpr JExpr JExpr
+           | JApply JExpr [JExpr]
+           deriving (Show, Eq)
+
+data JValue = JNum Integer
+            | JBool Bool
+            | JPlus | JMinus | JMult | JDiv | JLtEq | JLt | JEq | JGt | JGtEq
+            deriving (Show, Eq)
 
 data SExpr = SESym String | SENum Integer | SEList [SExpr] deriving (Show, Eq)
 
 pp :: JExpr -> String
-pp (JNum n) = show n
-pp (JPlus lhs rhs) = "(+ " ++ pp lhs ++ " " ++ pp rhs ++ ")"
-pp (JMult lhs rhs) = "(* " ++ pp lhs ++ " " ++ pp rhs ++ ")"
+pp (JVal val) = case val of
+    JNum n -> show n
+    JBool b -> show b
+    JPlus -> "+"
+    JMinus -> "-"
+    JMult -> "*"
+    JDiv -> "/"
+    JEq -> "="
+    JLt -> "<"
+    JGt -> ">"
+    JLtEq -> "<="
+    JGtEq -> ">="
+pp (JIf cond e1 e2) = "(if " ++ pp cond ++ " " ++ pp e1 ++ " " ++ pp e2 ++ ")"
+pp (JApply head args) = "(" ++ pp head ++ " " ++ printedArgs ++ ")"
+  where
+    printedArgs = unwords $ map pp args
 
 interp :: JExpr -> Integer
 interp (JNum n) = n
