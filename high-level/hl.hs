@@ -35,10 +35,25 @@ pp (JApply head args) = "(" ++ pp head ++ " " ++ printedArgs ++ ")"
   where
     printedArgs = unwords $ map pp args
 
-interp :: JExpr -> Integer
-interp (JNum n) = n
-interp (JPlus lhs rhs) = interp lhs + interp rhs
-interp (JMult lhs rhs) = interp lhs * interp rhs
+interp :: JExpr -> JValue
+interp (JVal v) = v
+interp (JIf ec et ef) = if interp ec == JBool False then interp ef else interp et
+interp (JApply efn eargs) = delta vfn vargs
+  where
+    vfn = interp efn
+    vargs = map interp eargs
+
+delta :: JValue -> [JValue] -> JValue
+delta JPlus [JNum a, JNum b] = JNum (a + b)
+delta JMinus [JNum a, JNum b] = JNum (a - b)
+delta JMult [JNum a, JNum b] = JNum (a * b)
+delta JDiv [JNum a, JNum b] = JNum (a `div` b)
+delta JLtEq [JNum a, JNum b] = JBool (a <= b)
+delta JLt [JNum a, JNum b] = JBool (a < b)
+delta JEq [JNum a, JNum b] = JBool (a == b)
+delta JGt [JNum a, JNum b] = JBool (a > b)
+delta JGtEq [JNum a, JNum b] = JBool (a >= b)
+delta _ _ = error "Bad JApply"
 
 desugar :: SExpr -> JExpr
 desugar (SENum n) = JVal $ JNum n
