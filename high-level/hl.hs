@@ -55,28 +55,27 @@ desugar (SEList l) = case l of
 desugar (SENum n) = JNum n
 desugar (SESym s) = undefined
 
-checkJExpr :: JExpr -> Integer -> Bool
+checkJExpr :: JExpr -> JValue -> Bool
 checkJExpr expr ans = interp expr == ans
 
-checkSExpr :: SExpr -> Integer -> Bool
+checkSExpr :: SExpr -> JValue -> Bool
 checkSExpr expr = checkJExpr (desugar expr)
 
 -- [(program, expected_answer)]
-tests :: [(SExpr, Integer)]
-tests = [ (1, 1)
-        , (-1, -1)
-        , (["+", 1, 1], 2)
-        , (["*", 2, 3], 6)
-        , (["*", -1, 3], -3)
-        , (["*", ["+", 1, 10], 3], 33)
-        , (["*", ["+", 1, -1], 3], 0)
-        , (["+", 1, -1, 3], 3)
-        , (["+", ["*", 1, -1], 3], 2)
-        , (["*", ["+", 5, 10, -1], 2], 28)
-        , (["*", 2, 2, 2, 2], 16)
-        , (["*", ["+", 10, 10], ["*", 2, 2]], 80)
-        , (["-", 3], -3)
-        , (["-", 10, 20], -10) ]
+tests :: [(SExpr, JValue)]
+tests = [ (1, JNum 1)
+        , (["+", 1, 2, 3, 4], JNum 10)
+        , (["*", 1, 2, 3, 4], JNum 24)
+        , (["-", 3, 2], JNum 1)
+        , (["/", 4, 2], JNum 2)
+        , (["=", 0, 1], JBool False)
+        , (["<", 0, 1], JBool True)
+        , ([">", 0, 1], JBool False)
+        , (["<=", 1, 1], JBool True)
+        , ([">=", 0, 1], JBool False)
+        , (["if", ["<", 0, 1], 1, 0], JNum 1)
+        , (["if", "false", 5, "<="], JLtEq)
+        ]
 
 runTests :: IO ()
 runTests = do
