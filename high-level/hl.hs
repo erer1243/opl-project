@@ -60,6 +60,18 @@ delta JGt [JNum a, JNum b] = JBool (a > b)
 delta JGtEq [JNum a, JNum b] = JBool (a >= b)
 delta _ _ = error "Bad JApply"
 
+plug :: Context -> JExpr -> JExpr
+plug CHole e = e
+plug (CIf ctx et ef) e = JIf (plug ctx e) et ef
+plug (CApp before ctx after) e = case before of
+    -- The context is the prim
+    [] -> JApply (plug ctx e) after
+    -- The context is an argument to the prim
+    before ->
+        let (prim:argsBefore) = map JVal before
+            args = argsBefore ++ plug ctx e : after
+        in JApply prim args
+
 desugar :: SExpr -> JExpr
 desugar (SENum n) = JVal $ JNum n
 desugar (SEList l) = case l of
