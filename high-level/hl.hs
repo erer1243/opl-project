@@ -90,6 +90,20 @@ fr e@(JApply prim args) =
     isJVal (JVal _) = True
     isJVal _ = False
 
+smallStepInterp :: JExpr -> JValue
+smallStepInterp e = case fr e of
+    -- fr says that e is a JVal, so it is safe to unwrap it
+    Nothing -> unwrapJVal e
+    Just (ctx, rdx) -> smallStepInterp $ plug ctx $ step rdx
+
+-- Usage of fr in smallStepInterp guarantees all parts
+-- of each JExpr passed to step are a JVal
+step :: JExpr -> JExpr
+step (JIf (JVal (JBool False)) _ ef) = ef
+step (JIf (JVal _) et _) = et
+step (JApply p v) = JVal $ delta (unwrapJVal p) (map unwrapJVal v)
+step _ = error "Bad step"
+
 desugar :: SExpr -> JExpr
 desugar (SENum n) = JVal $ JNum n
 desugar (SEList l) = case l of
@@ -123,11 +137,24 @@ desugar (SESym s) = JVal $ case s of
     "false" -> JBool False
     s -> error $ "bad SESym " ++ s
 
-checkJExpr :: JExpr -> JValue -> Bool
-checkJExpr expr ans = interp expr == ans
+-- Helper function that unwraps a JValue from a JExpr JVal variant
+-- In a couple places, we are guaranteed that a JExpr is a JVal
+-- and this is useful. I believe I wrote the code in such a way that the
+-- error branch is impossible to hit, even given a malformed JExpr.
+unwrapJVal :: JExpr -> JValue
+unwrapJVal (JVal v) = v
+unwrapJVal e = error $ "unwrapJVal " ++ show e
+
+checkJExprBig :: JExpr -> JValue -> Bool
+checkJExprBig expr ans = interp expr == ans
+
+checkJExprSmall :: JExpr -> JValue -> Bool
+checkJExprSmall expr ans = smallStepInterp expr == ans
 
 checkSExpr :: SExpr -> JValue -> Bool
-checkSExpr expr = checkJExpr (desugar expr)
+checkSExpr expr ans = checkJExprBig jExpr ans && checkJExprSmall jExpr ans
+  where
+    jExpr = desugar expr
 
 -- [(program, expected_answer)]
 tests :: [(SExpr, JValue)]
