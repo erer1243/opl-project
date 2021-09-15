@@ -72,6 +72,24 @@ plug (CApp before ctx after) e = case before of
             args = argsBefore ++ plug ctx e : after
         in JApply prim args
 
+fr :: JExpr -> Maybe (Context, JExpr)
+fr (JVal _ ) = Nothing
+fr e@(JIf ec et ef) = case fr ec of
+    Nothing -> Just (CHole, e)
+    Just (ctx, rdx) -> Just (CIf ctx et ef, rdx)
+fr e@(JApply prim args) =
+    case span isJVal applyList of
+        (v, []) -> Just (CHole, e)
+        (v, e0:em) ->
+            -- The above branch guarantees all elements in v are JVal
+            let vals = map unwrapJVal v
+                Just (ctx, rdx) = fr e0
+            in Just (CApp vals ctx em, rdx)
+  where
+    applyList = prim : args
+    isJVal (JVal _) = True
+    isJVal _ = False
+
 desugar :: SExpr -> JExpr
 desugar (SENum n) = JVal $ JNum n
 desugar (SEList l) = case l of
