@@ -15,6 +15,11 @@ data JValue = JNum Integer
             | JPlus | JMinus | JMult | JDiv | JLtEq | JLt | JEq | JGt | JGtEq
             deriving (Show, Eq)
 
+data Context = CHole
+             | CIf Context JExpr JExpr
+             | CApp [JValue] Context [JExpr]
+             deriving (Show, Eq)
+
 data SExpr = SESym String | SENum Integer | SEList [SExpr] deriving (Show, Eq)
 
 pp :: JExpr -> String
