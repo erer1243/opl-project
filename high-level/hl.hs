@@ -5,6 +5,9 @@
 import GHC.Exts (IsList(..))
 import Data.String (IsString(..))
 
+-- For jeToLL
+import Data.List (intercalate)
+
 data JExpr = JVal JValue
            | JIf JExpr JExpr JExpr
            | JApply JExpr [JExpr]
@@ -178,6 +181,45 @@ runTests = do
     let numSuccesses = length $ filter id testResults
     let numFailures = length tests - numSuccesses
     putStrLn $ show numSuccesses ++ " successes and " ++ show numFailures ++ " failures"
+
+-- Converts a single JExpr to low level rust code.
+-- Assumes that everything from ll.rs is imported.
+jeToLL :: JExpr -> String
+jeToLL (JVal v) = wrapJVal $ case v of
+    JNum n -> "Num(" ++ show n ++ ")"
+    JBool b -> "Bool(" ++ if b then "true" else "false" ++ ")"
+    JPlus -> "Plus"
+    JMinus -> "Minus"
+    JMult -> "Mult"
+    JDiv -> "Div"
+    JLtEq -> "LtEq"
+    JLt -> "Lt"
+    JEq -> "Eq"
+    JGt -> "Gt"
+    JGtEq -> "GtEq"
+  where
+    wrapJVal str = "JExpr::JVal(JValue::" ++ str ++ ")"
+jeToLL (JIf ec et ef) =
+    let commaSeparatedArgs = intercalate ", " (map jeToLL [ec, et, ef])
+    in "JExpr::jif(" ++ commaSeparatedArgs ++ ")"
+jeToLL (JApply p args) =
+    let commaSeparatedArgs = intercalate ", " $ map jeToLL args
+    in "JExpr::japply(" ++ jeToLL p ++ ", &[" ++ commaSeparatedArgs ++ "])"
+
+-- Generates code from JExpr and emits it to a file so it can be run in the
+-- low-level directory with cargo
+-- !! Assumes this is being run in project/high-level/ and will write to
+-- the wrong file if not !!
+emitLL :: JExpr -> IO ()
+emitLL expr =
+    writeFile "../low-level/src/hlgen.rs" $
+        unlines [ "use ll::*;"
+                , "fn gen_expr() -> JExpr {"
+                , jeToLL expr
+                , "}"
+                , "fn main() { let _expr = gen_expr(); }"
+                ]
+
 
 main :: IO ()
 main = runTests
