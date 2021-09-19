@@ -1,0 +1,16 @@
+[package]
+name = "low-level"
+version = "0.1.0"
+edition = "2018"
+
+# The actual implementation of low level logic for the project
+[lib]
+name = "ll"
+path = "src/ll.rs"
+
+# The code emitted by the high level part of the project
+[[bin]]
+name = "hlgen"
+path = "src/hlgen.rs"
+
+[dependencies]
