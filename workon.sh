@@ -11,7 +11,7 @@ if [ $(hostname) = small ]; then
 	EDITCMD="alacritty -e vim high-level/hl.hs & disown"
 else
 	CHROMIUM=chromium-freeworld
-	EDITCMD="sublime_text ."
+	EDITCMD="sublime_text -a ."
 fi
 
 bspc node --presel-dir north --presel-ratio 0.8
