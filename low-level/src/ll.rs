@@ -1,3 +1,4 @@
+// e ::= v | (e e..) | (if e e e)
 #[derive(Clone)]
 pub enum JExpr {
     JVal(JValue),
@@ -12,6 +13,9 @@ pub enum JExpr {
     },
 }
 
+// v ::= number | boolean | prim
+// prim ::= + | * | / | - | <= | < | = | > | >=
+// prim is not a separate data structure in my implementation
 #[derive(Copy, Clone)]
 pub enum JValue {
     Num(i32),

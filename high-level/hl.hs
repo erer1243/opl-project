@@ -8,21 +8,30 @@ import Data.String (IsString(..))
 -- For jeToLL
 import Data.List (intercalate)
 
+-- e ::= v | (e e..) | (if e e e)
 data JExpr = JVal JValue
            | JIf JExpr JExpr JExpr
            | JApply JExpr [JExpr]
            deriving (Show, Eq)
 
+-- v ::= number | boolean | prim
+-- prim ::= + | * | / | - | <= | < | = | > | >=
+-- prim is not a separate data structure in my implementation
 data JValue = JNum Integer
             | JBool Bool
             | JPlus | JMinus | JMult | JDiv | JLtEq | JLt | JEq | JGt | JGtEq
             deriving (Show, Eq)
 
+-- E ::= [] | (if E e e) | (v.. E e..)
 data Context = CHole
              | CIf Context JExpr JExpr
              | CApp [JValue] Context [JExpr]
              deriving (Show, Eq)
 
+-- se ::= empty | (cons se se) | string
+-- I decided to implement SExpr this way because it allows me
+-- to take advantage of list, string, and number literal overloading in ghc
+-- to write SExprs like ["+", 1, 2]
 data SExpr = SESym String | SENum Integer | SEList [SExpr] deriving (Show, Eq)
 
 pp :: JExpr -> String
