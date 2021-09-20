@@ -213,7 +213,7 @@ jeToLL (JIf ec et ef) =
     in "JExpr::jif(" ++ commaSeparatedArgs ++ ")"
 jeToLL (JApply p args) =
     let commaSeparatedArgs = intercalate ", " $ map jeToLL args
-    in "JExpr::japply(" ++ jeToLL p ++ ", &[" ++ commaSeparatedArgs ++ "])"
+    in "JExpr::japply(" ++ jeToLL p ++ ", [" ++ commaSeparatedArgs ++ "])"
 
 -- Generates code from JExpr and emits it to a file so it can be run in the
 -- low-level directory with cargo

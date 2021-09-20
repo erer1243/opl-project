@@ -1,5 +1,5 @@
 // e ::= v | (e e..) | (if e e e)
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum JExpr {
     JVal(JValue),
     JIf {
@@ -8,15 +8,15 @@ pub enum JExpr {
         ef: Box<JExpr>,
     },
     JApply {
-        p: Box<JExpr>,
-        args: Vec<JExpr>,
+        e0: Box<JExpr>,
+        em: Vec<JExpr>,
     },
 }
 
 // v ::= number | boolean | prim
 // prim ::= + | * | / | - | <= | < | = | > | >=
 // prim is not a separate data structure in my implementation
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum JValue {
     Num(i32),
     Bool(bool),
@@ -33,25 +33,35 @@ pub enum JValue {
 
 impl JExpr {
     // Convenience function to make constructing JExpr::JIf cleaner
-    pub fn jif(ec: JExpr, et: JExpr, ef: JExpr) -> JExpr {
-        let ec = Box::new(ec);
-        let et = Box::new(et);
-        let ef = Box::new(ef);
-
-        JExpr::JIf { ec, et, ef }
+    pub fn jif<EC, ET, EF>(ec: EC, et: ET, ef: EF) -> JExpr
+    where
+        EC: Into<Box<JExpr>>,
+        ET: Into<Box<JExpr>>,
+        EF: Into<Box<JExpr>>,
+    {
+        JExpr::JIf {
+            ec: ec.into(),
+            et: et.into(),
+            ef: ef.into(),
+        }
     }
 
     // Convenience function to make constructing JExpr::JApply cleaner
-    pub fn japply(p: JExpr, args: &[JExpr]) -> JExpr {
-        let p = Box::new(p);
-        let args = args.into();
-
-        JExpr::JApply { p, args }
+    pub fn japply<E0, EM>(e0: E0, em: EM) -> JExpr
+    where
+        E0: Into<Box<JExpr>>,
+        EM: Into<Vec<JExpr>>,
+    {
+        JExpr::JApply {
+            e0: e0.into(),
+            em: em.into(),
+        }
     }
 }
 
 // K ::= KRet | (KIf e e K) | (KApp (v..) (e..) K)
 // Aka Continuation
+#[derive(Clone, Debug)]
 pub enum Cont {
     KRet,
     KIf {
@@ -68,7 +78,10 @@ pub enum Cont {
 
 impl Cont {
     // Convenience function to make constructing Cont::KIf cleaner
-    pub fn kif(et: JExpr, ef: JExpr, k: Cont) -> Cont {
+    pub fn kif<K>(et: JExpr, ef: JExpr, k: K) -> Cont
+    where
+        K: Into<Box<Cont>>,
+    {
         Cont::KIf {
             et,
             ef,
@@ -77,7 +90,12 @@ impl Cont {
     }
 
     // Convenience function to make constructing Cont::KApp cleaner
-    pub fn kapp(v: &[JValue], e: &[JExpr], k: Cont) -> Cont {
+    pub fn kapp<V, E, K>(v: V, e: E, k: K) -> Cont
+    where
+        V: Into<Vec<JValue>>,
+        E: Into<Vec<JExpr>>,
+        K: Into<Box<Cont>>,
+    {
         Cont::KApp {
             v: v.into(),
             e: e.into(),
