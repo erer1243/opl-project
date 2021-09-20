@@ -49,3 +49,39 @@ impl JExpr {
         JExpr::JApply { p, args }
     }
 }
+
+// K ::= KRet | (KIf e e K) | (KApp (v..) (e..) K)
+// Aka Continuation
+pub enum Cont {
+    KRet,
+    KIf {
+        et: JExpr,
+        ef: JExpr,
+        k: Box<Cont>,
+    },
+    KApp {
+        v: Vec<JValue>,
+        e: Vec<JExpr>,
+        k: Box<Cont>,
+    },
+}
+
+impl Cont {
+    // Convenience function to make constructing Cont::KIf cleaner
+    pub fn kif(et: JExpr, ef: JExpr, k: Cont) -> Cont {
+        Cont::KIf {
+            et,
+            ef,
+            k: k.into(),
+        }
+    }
+
+    // Convenience function to make constructing Cont::KApp cleaner
+    pub fn kapp(v: &[JValue], e: &[JExpr], k: Cont) -> Cont {
+        Cont::KApp {
+            v: v.into(),
+            e: e.into(),
+            k: k.into(),
+        }
+    }
+}
