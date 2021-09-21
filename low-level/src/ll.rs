@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 // e ::= v | (e e..) | (if e e e)
 #[derive(Clone, Debug)]
 pub enum JExpr {
@@ -18,17 +20,17 @@ pub enum JExpr {
 // prim is not a separate data structure in my implementation
 #[derive(Copy, Clone, Debug)]
 pub enum JValue {
-    Num(i32),
-    Bool(bool),
-    Plus,
-    Minus,
-    Mult,
-    Div,
-    LtEq,
-    Lt,
-    Eq,
-    Gt,
-    GtEq,
+    JNum(i32),
+    JBool(bool),
+    JPlus,
+    JMinus,
+    JMult,
+    JDiv,
+    JLtEq,
+    JLt,
+    JEq,
+    JGt,
+    JGtEq,
 }
 
 impl JExpr {
@@ -71,7 +73,7 @@ pub enum Cont {
     },
     KApp {
         v: Vec<JValue>,
-        e: Vec<JExpr>,
+        e: VecDeque<JExpr>, // VecDeque because pop_front is used in Ck::step()
         k: Box<Cont>,
     },
 }
@@ -93,7 +95,7 @@ impl Cont {
     pub fn kapp<V, E, K>(v: V, e: E, k: K) -> Cont
     where
         V: Into<Vec<JValue>>,
-        E: Into<Vec<JExpr>>,
+        E: Into<VecDeque<JExpr>>,
         K: Into<Box<Cont>>,
     {
         Cont::KApp {

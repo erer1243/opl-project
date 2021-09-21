@@ -195,17 +195,17 @@ runTests = do
 -- Assumes that everything from ll.rs is imported.
 jeToLL :: JExpr -> String
 jeToLL (JVal v) = wrapJVal $ case v of
-    JNum n -> "Num(" ++ show n ++ ")"
-    JBool b -> "Bool(" ++ if b then "true" else "false" ++ ")"
-    JPlus -> "Plus"
-    JMinus -> "Minus"
-    JMult -> "Mult"
-    JDiv -> "Div"
-    JLtEq -> "LtEq"
-    JLt -> "Lt"
-    JEq -> "Eq"
-    JGt -> "Gt"
-    JGtEq -> "GtEq"
+    JNum n -> "JNum(" ++ show n ++ ")"
+    JBool b -> "JBool(" ++ if b then "true" else "false" ++ ")"
+    JPlus -> "JPlus"
+    JMinus -> "JMinus"
+    JMult -> "JMult"
+    JDiv -> "JDiv"
+    JLtEq -> "JLtEq"
+    JLt -> "JLt"
+    JEq -> "JEq"
+    JGt -> "JGt"
+    JGtEq -> "JGtEq"
   where
     wrapJVal str = "JExpr::JVal(JValue::" ++ str ++ ")"
 jeToLL (JIf ec et ef) =
