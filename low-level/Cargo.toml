@@ -14,3 +14,4 @@ name = "hlgen"
 path = "src/hlgen.rs"
 
 [dependencies]
+derive_more = "0.99"
