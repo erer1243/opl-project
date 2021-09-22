@@ -5,8 +5,9 @@
 import GHC.Exts (IsList(..))
 import Data.String (IsString(..))
 
--- For jeToLL
 import Data.List (intercalate)
+import System.Process (callCommand)
+import Control.Monad (forM_)
 
 -- e ::= v | (e e..) | (if e e e)
 data JExpr = JVal JValue
@@ -186,17 +187,30 @@ tests = [ (1, JNum 1)
 
 runTests :: IO ()
 runTests = do
+    putStrLn "Running tests in HL code:"
     let testResults = map (uncurry checkSExpr) tests
     let numSuccesses = length $ filter id testResults
     let numFailures = length tests - numSuccesses
     putStrLn $ show numSuccesses ++ " successes and " ++ show numFailures ++ " failures"
 
+    putStrLn "Running tests in LL code:"
+    forM_ tests runTestInLL
+
 -- Converts a single JExpr to low level rust code.
--- Assumes that everything from ll.rs is imported.
 jeToLL :: JExpr -> String
-jeToLL (JVal v) = wrapJVal $ case v of
+jeToLL (JVal v) = "JExpr::jval(" ++ jvToLL v ++ ")"
+jeToLL (JIf ec et ef) =
+    let commaSeparatedArgs = intercalate ", " (map jeToLL [ec, et, ef])
+    in "JExpr::jif(" ++ commaSeparatedArgs ++ ")"
+jeToLL (JApply p args) =
+    let commaSeparatedArgs = intercalate ", " $ map jeToLL args
+    in "JExpr::japply(" ++ jeToLL p ++ ", [" ++ commaSeparatedArgs ++ "])"
+
+-- Converts a single JValue to low level rust code.
+jvToLL :: JValue -> String
+jvToLL v = "JValue::" ++ case v of
     JNum n -> "JNum(" ++ show n ++ ")"
-    JBool b -> "JBool(" ++ if b then "true" else "false" ++ ")"
+    JBool b -> "JBool(" ++ (if b then "true" else "false") ++ ")"
     JPlus -> "JPlus"
     JMinus -> "JMinus"
     JMult -> "JMult"
@@ -206,29 +220,34 @@ jeToLL (JVal v) = wrapJVal $ case v of
     JEq -> "JEq"
     JGt -> "JGt"
     JGtEq -> "JGtEq"
-  where
-    wrapJVal str = "JExpr::JVal(JValue::" ++ str ++ ")"
-jeToLL (JIf ec et ef) =
-    let commaSeparatedArgs = intercalate ", " (map jeToLL [ec, et, ef])
-    in "JExpr::jif(" ++ commaSeparatedArgs ++ ")"
-jeToLL (JApply p args) =
-    let commaSeparatedArgs = intercalate ", " $ map jeToLL args
-    in "JExpr::japply(" ++ jeToLL p ++ ", [" ++ commaSeparatedArgs ++ "])"
 
--- Generates code from JExpr and emits it to a file so it can be run in the
--- low-level directory with cargo
--- !! Assumes this is being run in project/high-level/ and will write to
--- the wrong file if not !!
-emitLL :: JExpr -> IO ()
-emitLL expr =
+-- Takes a test and runs it in ll code, printing the result and if it failed
+runTestInLL :: (SExpr, JValue) -> IO ()
+runTestInLL (se, ans) = do
+    -- Convert to source code
+    let je = desugar se
+    let jeLL = jeToLL je
+    let ansLL = jvToLL ans
+
+    -- Print message
+    putStrLn "========================="
+    putStrLn $ "test=" ++ show se
+    putStrLn $ "expecting=" ++ show ans
+
+    -- Write the source to the hlgen file
     writeFile "../low-level/src/hlgen.rs" $
         unlines [ "use ll::*;"
-                , "fn gen_expr() -> JExpr {"
-                , jeToLL expr
+                , "fn main() {"
+                , "let expr =" ++ jeLL ++ ";"
+                , "let ans =" ++ ansLL ++ ";"
+                , "let val = Ck::evaluate(expr);"
+                , "println!(\"answer={:?}\", val);"
+                , "if val != ans { println!(\"!!! Failure !!!\"); }"
                 , "}"
-                , "fn main() { let _expr = gen_expr(); }"
                 ]
 
+    -- Run the test program
+    callCommand "cargo run --quiet --manifest-path=../low-level/Cargo.toml"
 
 main :: IO ()
 main = runTests
