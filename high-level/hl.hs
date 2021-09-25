@@ -198,13 +198,13 @@ runTests = do
 
 -- Converts a single JExpr to low level rust code.
 jeToLL :: JExpr -> String
-jeToLL (JVal v) = "JExpr::jval(" ++ jvToLL v ++ ")"
+jeToLL (JVal v) = "jval(" ++ jvToLL v ++ ")"
 jeToLL (JIf ec et ef) =
     let commaSeparatedArgs = intercalate ", " (map jeToLL [ec, et, ef])
-    in "JExpr::jif(" ++ commaSeparatedArgs ++ ")"
+    in "jif(" ++ commaSeparatedArgs ++ ")"
 jeToLL (JApply p args) =
     let commaSeparatedArgs = intercalate ", " $ map jeToLL args
-    in "JExpr::japply(" ++ jeToLL p ++ ", [" ++ commaSeparatedArgs ++ "])"
+    in "japply(" ++ jeToLL p ++ ", [" ++ commaSeparatedArgs ++ "])"
 
 -- Converts a single JValue to low level rust code.
 jvToLL :: JValue -> String

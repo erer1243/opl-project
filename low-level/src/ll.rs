@@ -34,24 +34,22 @@ pub enum JValue {
     JGtEq,
 }
 
-impl JExpr {
-    // Convenience function to make constructing JIf cleaner
-    pub fn jif(ec: JExpr, et: JExpr, ef: JExpr) -> JExpr {
-        JExpr(Leak::new(JExprBody::JIf { ec, et, ef }))
-    }
+// Convenience function to make constructing JExpr::JIf cleaner
+pub fn jif(ec: JExpr, et: JExpr, ef: JExpr) -> JExpr {
+    JExpr(Leak::new(JExprBody::JIf { ec, et, ef }))
+}
 
-    // Convenience function to make constructing JApply cleaner
-    pub fn japply<EM>(e0: JExpr, em: EM) -> JExpr
-    where
-        EM: Into<List<JExpr>>,
-    {
-        JExpr(Leak::new(JExprBody::JApply { e0, em: em.into() }))
-    }
+// Convenience function to make constructing JExpr::JApply cleaner
+pub fn japply<EM>(e0: JExpr, em: EM) -> JExpr
+where
+    EM: Into<List<JExpr>>,
+{
+    JExpr(Leak::new(JExprBody::JApply { e0, em: em.into() }))
+}
 
-    // Convenience function to make constructing JVal cleaner
-    pub fn jval(v: JValue) -> JExpr {
-        JExpr(Leak::new(JExprBody::JVal(v)))
-    }
+// Convenience function to make constructing JExpr::JVal cleaner
+pub fn jval(v: JValue) -> JExpr {
+    JExpr(Leak::new(JExprBody::JVal(v)))
 }
 
 #[derive(Copy, Clone, Deref, Debug)]
@@ -75,21 +73,19 @@ pub enum ContBody {
     },
 }
 
-impl Cont {
-    // Convenience function to make constructing KRet cleaner
-    pub fn kret() -> Cont {
-        Cont(Leak::new(ContBody::KRet))
-    }
+// Convenience function to make constructing KRet cleaner
+pub fn kret() -> Cont {
+    Cont(Leak::new(ContBody::KRet))
+}
 
-    // Convenience function to make constructing KIf cleaner
-    pub fn kif(et: JExpr, ef: JExpr, k: Cont) -> Cont {
-        Cont(Leak::new(ContBody::KIf { et, ef, k }))
-    }
+// Convenience function to make constructing KIf cleaner
+pub fn kif(et: JExpr, ef: JExpr, k: Cont) -> Cont {
+    Cont(Leak::new(ContBody::KIf { et, ef, k }))
+}
 
-    // Convenience function to make constructing KApp cleaner
-    pub fn kapp(v: List<JValue>, e: List<JExpr>, k: Cont) -> Cont {
-        Cont(Leak::new(ContBody::KApp { v, e, k }))
-    }
+// Convenience function to make constructing KApp cleaner
+pub fn kapp(v: List<JValue>, e: List<JExpr>, k: Cont) -> Cont {
+    Cont(Leak::new(ContBody::KApp { v, e, k }))
 }
 
 // Ck machine
@@ -107,7 +103,7 @@ impl Ck {
     }
 
     pub fn inject(e: JExpr) -> Ck {
-        Ck(e, Cont::kret())
+        Ck(e, kret())
     }
 
     pub fn extract(ck: Ck) -> JValue {
@@ -131,7 +127,7 @@ impl Ck {
 
         match (*self.0, *self.1) {
             // Rule 1
-            (JIf { ec, et, ef }, _) => Ck(ec, Cont::kif(et, ef, orig_k)),
+            (JIf { ec, et, ef }, _) => Ck(ec, kif(et, ef, orig_k)),
 
             // Rule 2
             (JVal(JBool(false)), KIf { ef, k, .. }) => Ck(ef, k),
@@ -140,20 +136,20 @@ impl Ck {
             (JVal(_), KIf { et, k, .. }) => Ck(et, k),
 
             // Rule 4
-            (JApply { e0, em }, _) => Ck(e0, Cont::kapp([].into(), em, orig_k)),
+            (JApply { e0, em }, _) => Ck(e0, kapp([].into(), em, orig_k)),
 
             // Rule 5
             (JVal(v1), KApp { v, e, k }) if !e.is_empty() => {
                 // Reverse-order trick from lecture 4
                 let v = cons(v1, v);
                 let (e0, em) = e.head_tail().unwrap();
-                Ck(e0.clone(), Cont::kapp(v, em, k))
+                Ck(e0.clone(), kapp(v, em, k))
             }
 
             // Rule 6
             (JVal(vn), KApp { v, k, .. }) => {
                 let v = cons(vn, v);
-                Ck(JExpr::jval(delta(v)), k)
+                Ck(jval(delta(v)), k)
             }
 
             // bottom
