@@ -41,15 +41,11 @@ impl JExpr {
     }
 
     // Convenience function to make constructing JApply cleaner
-    pub fn japply<E0, EM>(e0: E0, em: EM) -> JExpr
+    pub fn japply<EM>(e0: JExpr, em: EM) -> JExpr
     where
-        E0: Into<JExpr>,
         EM: Into<List<JExpr>>,
     {
-        JExpr(Leak::new(JExprBody::JApply {
-            e0: e0.into(),
-            em: em.into(),
-        }))
+        JExpr(Leak::new(JExprBody::JApply { e0, em: em.into() }))
     }
 
     // Convenience function to make constructing JVal cleaner
