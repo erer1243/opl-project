@@ -9,18 +9,26 @@ import Data.List (intercalate)
 import System.Process (callCommand)
 import Control.Monad (forM_)
 
--- e ::= v | (e e..) | (if e e e)
+-- prog ::= d... e
+data JProg = JProg [JDefine] JExpr
+
+-- d ::= define (f x...) e
+data JDefine = JDefine JFnRef [JVarRef] JExpr
+
+-- e ::= v | (e e..) | (if e e e) | x
 data JExpr = JVal JValue
-           | JIf JExpr JExpr JExpr
            | JApply JExpr [JExpr]
+           | JIf JExpr JExpr JExpr
+           | JVarRef JVarRef
            deriving (Show, Eq)
 
--- v ::= number | boolean | prim
+-- v ::= number | boolean | prim | f
 -- prim ::= + | * | / | - | <= | < | = | > | >=
 -- prim is not a separate data structure in my implementation
 data JValue = JNum Integer
             | JBool Bool
             | JPlus | JMinus | JMult | JDiv | JLtEq | JLt | JEq | JGt | JGtEq
+            | JFnRef JFnRef
             deriving (Show, Eq)
 
 -- E ::= [] | (if E e e) | (v.. E e..)
@@ -28,6 +36,12 @@ data Context = CHole
              | CIf Context JExpr JExpr
              | CApp [JValue] Context [JExpr]
              deriving (Show, Eq)
+
+-- f ::= some set of functions
+type JFnRef = String
+
+-- x ::= some set of variables
+type JVarRef = String
 
 -- se ::= empty | (cons se se) | string
 -- I decided to implement SExpr this way because it allows me

@@ -3,20 +3,48 @@ mod util;
 use derive_more::Deref;
 pub use util::*;
 
+// prog ::= d... e
+pub struct JProg {
+    fs: List<JDefine>,
+    e: JExpr,
+}
+
+// Convenience function to make constructing JProg cleaner
+pub fn jprog<FS: IntoList<JDefine>>(fs: FS, e: JExpr) -> JProg {
+    JProg { fs: fs.into(), e }
+}
+
+// d ::= define (f x...) e
+pub struct JDefine {
+    f: JFnRef,
+    xs: List<JVarRef>,
+    e: JExpr,
+}
+
+// Convenience function to make constructing JDefine cleaner
+pub fn jdefine<XS: IntoList<JVarRef>>(f: JFnRef, xs: XS, e: JExpr) -> JDefine {
+    JDefine {
+        f,
+        xs: xs.into(),
+        e,
+    }
+}
+
 // JExpr pointer wrapper type
 #[derive(Copy, Clone, Deref, Debug)]
 #[deref(forward)]
 pub struct JExpr(Leak<JExprBody>);
 
-// e ::= v | (e e..) | (if e e e)
+// e ::= v | (e e..) | (if e e e) | x
 #[derive(Copy, Clone, Debug)]
 pub enum JExprBody {
     JVal(JValue),
     JIf { ec: JExpr, et: JExpr, ef: JExpr },
     JApply { e0: JExpr, em: List<JExpr> },
+    JVarRef(JVarRef),
 }
 
-// v ::= number | boolean | prim
+// v ::= number | boolean | prim | f
 // prim ::= + | * | / | - | <= | < | = | > | >=
 // prim is not a separate data structure in my implementation
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -32,6 +60,7 @@ pub enum JValue {
     JEq,
     JGt,
     JGtEq,
+    JFnRef(JFnRef),
 }
 
 // Convenience function to make constructing JExpr::JIf cleaner
@@ -40,10 +69,7 @@ pub fn jif(ec: JExpr, et: JExpr, ef: JExpr) -> JExpr {
 }
 
 // Convenience function to make constructing JExpr::JApply cleaner
-pub fn japply<EM>(e0: JExpr, em: EM) -> JExpr
-where
-    EM: Into<List<JExpr>>,
-{
+pub fn japply<EM: IntoList<JExpr>>(e0: JExpr, em: EM) -> JExpr {
     JExpr(Leak::new(JExprBody::JApply { e0, em: em.into() }))
 }
 
@@ -51,6 +77,12 @@ where
 pub fn jval(v: JValue) -> JExpr {
     JExpr(Leak::new(JExprBody::JVal(v)))
 }
+
+// x ::= some set of variable names
+type JVarRef = &'static str;
+
+// f ::= some set of function names
+type JFnRef = &'static str;
 
 #[derive(Copy, Clone, Deref, Debug)]
 #[deref(forward)]

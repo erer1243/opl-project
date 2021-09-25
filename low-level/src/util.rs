@@ -1,7 +1,7 @@
 use std::convert::From;
+use std::fmt::Debug;
 use std::iter::FromIterator;
 use std::ops::Deref;
-use std::fmt::Debug;
 
 // A "smart" pointer that leaks the memory of whatever it allocates
 pub struct Leak<T>(*const T);
@@ -122,6 +122,10 @@ impl<T: Debug + Clone> Debug for List<T> {
         write!(f, "{:?}", self.to_vec())
     }
 }
+
+// Alias trait for Into<List<T>> -> IntoList<T>
+pub trait IntoList<T>: Into<List<T>> {}
+impl<T, S> IntoList<T> for S where S: Into<List<T>> {}
 
 #[test]
 fn linked_list_test() {
