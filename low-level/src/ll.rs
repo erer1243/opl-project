@@ -4,31 +4,10 @@ use derive_more::Deref;
 pub use util::*;
 
 // prog ::= d... e
-pub struct JProg {
-    fs: List<JDefine>,
-    e: JExpr,
-}
-
-// Convenience function to make constructing JProg cleaner
-pub fn jprog<FS: IntoList<JDefine>>(fs: FS, e: JExpr) -> JProg {
-    JProg { fs: fs.into(), e }
-}
+pub struct JProg(pub List<JDefine>, pub JExpr);
 
 // d ::= define (f x...) e
-pub struct JDefine {
-    f: JFnRef,
-    xs: List<JVarRef>,
-    e: JExpr,
-}
-
-// Convenience function to make constructing JDefine cleaner
-pub fn jdefine<XS: IntoList<JVarRef>>(f: JFnRef, xs: XS, e: JExpr) -> JDefine {
-    JDefine {
-        f,
-        xs: xs.into(),
-        e,
-    }
-}
+pub struct JDefine(pub JFnRef, pub List<JVarRef>, pub JExpr);
 
 // JExpr pointer wrapper type
 #[derive(Copy, Clone, Deref, Debug)]
@@ -39,8 +18,8 @@ pub struct JExpr(Leak<JExprBody>);
 #[derive(Copy, Clone, Debug)]
 pub enum JExprBody {
     JVal(JValue),
-    JIf { ec: JExpr, et: JExpr, ef: JExpr },
-    JApply { e0: JExpr, em: List<JExpr> },
+    JIf(JExpr, JExpr, JExpr),
+    JApply(JExpr, List<JExpr>),
     JVarRef(JVarRef),
 }
 
@@ -65,12 +44,12 @@ pub enum JValue {
 
 // Convenience function to make constructing JExpr::JIf cleaner
 pub fn jif(ec: JExpr, et: JExpr, ef: JExpr) -> JExpr {
-    JExpr(Leak::new(JExprBody::JIf { ec, et, ef }))
+    JExpr(Leak::new(JExprBody::JIf(ec, et, ef)))
 }
 
 // Convenience function to make constructing JExpr::JApply cleaner
-pub fn japply<EM: IntoList<JExpr>>(e0: JExpr, em: EM) -> JExpr {
-    JExpr(Leak::new(JExprBody::JApply { e0, em: em.into() }))
+pub fn japply(e0: JExpr, em: List<JExpr>) -> JExpr {
+    JExpr(Leak::new(JExprBody::JApply(e0, em)))
 }
 
 // Convenience function to make constructing JExpr::JVal cleaner
@@ -93,16 +72,8 @@ pub struct Cont(Leak<ContBody>);
 #[derive(Clone, Copy, Debug)]
 pub enum ContBody {
     KRet,
-    KIf {
-        et: JExpr,
-        ef: JExpr,
-        k: Cont,
-    },
-    KApp {
-        v: List<JValue>,
-        e: List<JExpr>,
-        k: Cont,
-    },
+    KIf(JExpr, JExpr, Cont),
+    KApp(List<JValue>, List<JExpr>, Cont),
 }
 
 // Convenience function to make constructing KRet cleaner
@@ -112,12 +83,12 @@ pub fn kret() -> Cont {
 
 // Convenience function to make constructing KIf cleaner
 pub fn kif(et: JExpr, ef: JExpr, k: Cont) -> Cont {
-    Cont(Leak::new(ContBody::KIf { et, ef, k }))
+    Cont(Leak::new(ContBody::KIf(et, ef, k)))
 }
 
 // Convenience function to make constructing KApp cleaner
 pub fn kapp(v: List<JValue>, e: List<JExpr>, k: Cont) -> Cont {
-    Cont(Leak::new(ContBody::KApp { v, e, k }))
+    Cont(Leak::new(ContBody::KApp(v, e, k)))
 }
 
 // Ck machine
@@ -159,19 +130,19 @@ impl Ck {
 
         match (*self.0, *self.1) {
             // Rule 1
-            (JIf { ec, et, ef }, _) => Ck(ec, kif(et, ef, orig_k)),
+            (JIf(ec, et, ef), _) => Ck(ec, kif(et, ef, orig_k)),
 
             // Rule 2
-            (JVal(JBool(false)), KIf { ef, k, .. }) => Ck(ef, k),
+            (JVal(JBool(false)), KIf(_et, ef, k)) => Ck(ef, k),
 
             // Rule 3
-            (JVal(_), KIf { et, k, .. }) => Ck(et, k),
+            (JVal(_), KIf(et, _ef, k)) => Ck(et, k),
 
             // Rule 4
-            (JApply { e0, em }, _) => Ck(e0, kapp([].into(), em, orig_k)),
+            (JApply(e0, em), _) => Ck(e0, kapp([].into(), em, orig_k)),
 
             // Rule 5
-            (JVal(v1), KApp { v, e, k }) if !e.is_empty() => {
+            (JVal(v1), KApp(v, e, k)) if !e.is_empty() => {
                 // Reverse-order trick from lecture 4
                 let v = cons(v1, v);
                 let (e0, em) = e.head_tail().unwrap();
@@ -179,7 +150,7 @@ impl Ck {
             }
 
             // Rule 6
-            (JVal(vn), KApp { v, k, .. }) => {
+            (JVal(vn), KApp(v, _e, k)) => {
                 let v = cons(vn, v);
                 Ck(jval(delta(v)), k)
             }
