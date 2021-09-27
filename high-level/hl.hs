@@ -10,10 +10,10 @@ import System.Process (callCommand)
 import Control.Monad (forM_)
 
 -- prog ::= d... e
-data JProg = JProg [JDefine] JExpr
+data JProg = JProg [JDefine] JExpr deriving (Show, Eq)
 
 -- d ::= define (f x...) e
-data JDefine = JDefine JFnRef [JVarRef] JExpr
+data JDefine = JDefine JFnRef [JVarRef] JExpr deriving (Show, Eq)
 
 -- e ::= v | (e e..) | (if e e e) | x
 data JExpr = JVal JValue
