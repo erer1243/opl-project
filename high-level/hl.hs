@@ -121,21 +121,20 @@ desugar :: SExpr -> JExpr
 desugar (SENum n) = JVal $ JNum n
 desugar (SEList l) = case l of
     -- +/* base cases
-    [SESym "+"] -> toJNum 0
-    [SESym "*"] -> toJNum 1
+    [SESym "+"] -> JVal $ JNum 0
+    [SESym "*"] -> JVal $ JNum 1
     -- +/* recursive cases
     (plus@(SESym "+"):head:tail) -> JApply (JVal JPlus) [desugar head,
                                                          desugar $ SEList $ plus : tail]
     (mult@(SESym "*"):head:tail) -> JApply (JVal JMult) [desugar head,
                                                          desugar $ SEList $ mult : tail]
     -- negation
-    [SESym "-", SENum n] -> toJNum $ negate n
-    -- other prims
-    [sym@(SESym _), SENum lhs, SENum rhs] -> JApply (desugar sym) [toJNum lhs, toJNum rhs]
+    [SESym "-", en] -> JApply (JVal JMult) [JVal (JNum (-1)), desugar en]
+    -- if condition
     [SESym "if", ec, et, ef] -> JIf (desugar ec) (desugar et) (desugar ef)
+    -- apply
+    (sym@(SESym _):tail) -> JApply (desugar sym) (map desugar tail)
     l -> error $ "bad SEList " ++ show l
-  where
-    toJNum = JVal . JNum
 desugar (SESym s) = JVal $ case s of
     "+" -> JPlus
     "-" -> JMinus
@@ -183,6 +182,8 @@ tests = [ (1, JNum 1)
         , ([">=", 0, 1], JBool False)
         , (["if", ["<", 0, 1], 1, 0], JNum 1)
         , (["if", "false", 5, "<="], JLtEq)
+        , (["+", 5, ["-", ["+", 2, 3]]], JNum 0)
+        , (["+", ["*", ["/", 9, 3], 10], ["-", 10]], JNum 20)
         ]
 
 runTests :: IO ()
