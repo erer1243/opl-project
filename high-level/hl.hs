@@ -28,8 +28,8 @@ desugar (SEList l) = case l of
     (plus@(SESym "+"):sexpr:rest) -> JPlus (desugar sexpr) (desugar (SEList (plus : rest)))
     (mult@(SESym "*"):sexpr:rest) -> JMult (desugar sexpr) (desugar (SEList (mult : rest)))
     -- negation/subtraction
-    [SESym "-", SENum n] -> JNum (negate n)
-    [SESym "-", SENum lhs, SENum rhs] -> JPlus (JNum lhs) (JNum (negate rhs))
+    [SESym "-", se] -> JMult (JNum (-1)) (desugar se)
+    [SESym "-", e0, e1] -> JPlus (desugar e0) (desugar ["-", e1])
     _ -> undefined
 desugar (SENum n) = JNum n
 desugar (SESym s) = undefined
@@ -55,7 +55,10 @@ tests = [ (1, 1)
         , (["*", 2, 2, 2, 2], 16)
         , (["*", ["+", 10, 10], ["*", 2, 2]], 80)
         , (["-", 3], -3)
-        , (["-", 10, 20], -10) ]
+        , (["-", 10, 20], -10)
+        , (["-", ["+", 5, 10]], -15)
+        , (["-", ["+", 5, 10], ["-", 3, 2]], 14)
+        ]
 
 runTests :: IO ()
 runTests = do
