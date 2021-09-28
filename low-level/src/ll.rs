@@ -183,3 +183,19 @@ fn delta(list: List<JValue>) -> JValue {
         _ => panic!("delta hit bottom case, {:?}", vec),
     }
 }
+
+// Substitute a single variable into a JExpr
+fn subst(var: (JVarRef, JValue), e: JExpr) -> JExpr {
+    use JExprBody::*;
+
+    let (x, xv) = var;
+    match &*e {
+        JIf(ec, et, ef) => jif(subst(var, *ec), subst(var, *et), subst(var, *ef)),
+        JApply(e0, em) => {
+            let params = em.to_vec().iter().map(|e| subst(var, *e)).collect();
+            japply(subst(var, *e0), params)
+        }
+        JVarRef(y) if x == *y => jval(xv),
+        _ => e,
+    }
+}
