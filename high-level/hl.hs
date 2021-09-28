@@ -264,6 +264,9 @@ tests = [ (["prog", "<="], JLtEq)
         , (["prog", ["-", ["*", 5, ["+", 2, 3]]]], JNum (-25))
         , (["prog", ["define", ["One"], 1], "One"], JFnRef "One")
         , (["prog", ["define", ["One"], 1], ["One"]], JNum 1)
+        , (["prog", ["define", ["CallSingle", "f"], ["f"]],
+                    ["define", ["One"], 1],
+                    ["CallSingle", "One"]], JNum 1)
         , (["prog", ["define", ["Double", "x"], ["+", "x", "x"]], ["Double", ["Double", 2]]], JNum 8)
         , (["prog", ["define", ["Quintuple", "x"], ["+", "x", "x", "x", "x", "x"]],
                                ["Quintuple", ["Quintuple", 1]]], JNum 25)
