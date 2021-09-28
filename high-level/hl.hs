@@ -240,14 +240,14 @@ unwrapJVal :: JExpr -> JValue
 unwrapJVal (JVal v) = v
 unwrapJVal e = error $ "unwrapJVal " ++ show e
 
--- checkJExprBig :: JProg -> JValue -> Bool
--- checkJExprBig prog ans = interp prog == ans
+checkJExprBig :: JProg -> JValue -> Bool
+checkJExprBig prog ans = interp prog == ans
 
 -- checkJExprSmall :: JExpr -> JValue -> Bool
 -- checkJExprSmall expr ans = smallStepInterp expr == ans
 
--- checkSExpr :: SExpr -> JValue -> Bool
--- checkSExpr expr = checkJExprBig (desugarJProg expr)
+checkSExpr :: SExpr -> JValue -> Bool
+checkSExpr expr = checkJExprBig (desugarJProg expr)
 
 -- [(program, expected_answer)]
 tests :: [(SExpr, JValue)]
@@ -287,16 +287,16 @@ tests = [ (["prog", "<="], JLtEq)
                     ["CollatzHighest", 27, 0]], JNum 9232)
         ]
 
--- runTests :: IO ()
--- runTests = do
---     putStrLn "Running tests in HL code:"
---     let testResults = map (uncurry checkSExpr) tests
---     let numSuccesses = length $ filter id testResults
---     let numFailures = length tests - numSuccesses
---     putStrLn $ show numSuccesses ++ " successes and " ++ show numFailures ++ " failures"
+runTests :: IO ()
+runTests = do
+    putStrLn "Running tests in HL code:"
+    let testResults = map (uncurry checkSExpr) tests
+    let numSuccesses = length $ filter id testResults
+    let numFailures = length tests - numSuccesses
+    putStrLn $ show numSuccesses ++ " successes and " ++ show numFailures ++ " failures"
 
---     putStrLn "Running tests in LL code:"
---     forM_ tests runTestInLL
+    putStrLn "Running tests in LL code:"
+    forM_ tests runTestInLL
 
 -- Convert JProg to rust code
 jpToLL :: JProg -> String
@@ -311,9 +311,9 @@ jdToLL (JDefine name args body) = "JDefine(" ++ strToLL name ++ ","
 -- Converts a single JExpr to low level rust code.
 jeToLL :: JExpr -> String
 jeToLL (JVal v) = "jval(" ++ jvToLL v ++ ")"
-jeToLL (JIf ec et ef) = "jif(" ++ listToLL (map jeToLL [ec, et, ef]) ++ ")"
+jeToLL (JIf ec et ef) = "jif(" ++ commaSep (map jeToLL [ec, et, ef]) ++ ")"
 jeToLL (JApply p args) = "japply(" ++ jeToLL p ++ "," ++ listToLL (map jeToLL args) ++ ")"
-jeToLL (JVarRef s) = strToLL s
+jeToLL (JVarRef s) = "jvarref(" ++ strToLL s ++ ")"
 
 -- Converts a single JValue to low level rust code.
 jvToLL :: JValue -> String
@@ -329,10 +329,13 @@ jvToLL v = "JValue::" ++ case v of
     JEq -> "JEq"
     JGt -> "JGt"
     JGtEq -> "JGtEq"
-    JFnRef s -> strToLL s
+    JFnRef s -> "JFnRef(" ++ strToLL s ++ ")"
+
+commaSep :: [String] -> String
+commaSep  = intercalate ", "
 
 listToLL :: [String] -> String
-listToLL strs = "List::from([" ++ intercalate ", " strs ++ "])"
+listToLL strs = "List::from([" ++ commaSep strs ++ "])"
 
 strToLL :: String -> String
 strToLL s = "\"" ++ s ++ "\""
@@ -366,7 +369,7 @@ runTestInLL (se, ans) = do
     callCommand "cargo run --quiet --manifest-path=../low-level/Cargo.toml"
 
 main :: IO ()
-main = return ()
+main = runTests
 
 -- Enable conversion from number literals into SENum
 -- Only fromInteger and negate are needed so the rest is left undefined

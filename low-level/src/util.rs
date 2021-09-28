@@ -70,6 +70,15 @@ impl<T> List<T> {
     pub fn is_empty(self) -> bool {
         self.0.is_none()
     }
+
+    pub fn len(mut self) -> usize {
+        let mut n = 0;
+        while let Some((_, next)) = self.head_tail() {
+            n += 1;
+            self = next;
+        }
+        n
+    }
 }
 
 // Allow cloning list into vec for a few inconvenient spots

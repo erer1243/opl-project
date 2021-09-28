@@ -1,12 +1,15 @@
 mod util;
 
 use derive_more::Deref;
+use std::collections::HashMap;
 pub use util::*;
 
 // prog ::= d... e
+#[derive(Clone, Copy, Debug)]
 pub struct JProg(pub List<JDefine>, pub JExpr);
 
 // d ::= define (f x...) e
+#[derive(Clone, Copy, Debug)]
 pub struct JDefine(pub JFnRef, pub List<JVarRef>, pub JExpr);
 
 // JExpr pointer wrapper type
@@ -57,6 +60,11 @@ pub fn jval(v: JValue) -> JExpr {
     JExpr(Leak::new(JExprBody::JVal(v)))
 }
 
+// Convenience function to make constructing JExpr::JVarRef cleaner
+pub fn jvarref(vr: JVarRef) -> JExpr {
+    JExpr(Leak::new(JExprBody::JVarRef(vr)))
+}
+
 // x ::= some set of variable names
 type JVarRef = &'static str;
 
@@ -94,30 +102,44 @@ pub fn kapp(v: List<JValue>, e: List<JExpr>, k: Cont) -> Cont {
 // Ck machine
 // st = <e, k>
 #[derive(Clone, Debug)]
-pub struct Ck(pub JExpr, pub Cont);
+pub struct Ck(pub Delta, pub JExpr, pub Cont);
+
+type Delta = HashMap<JFnRef, JDefine>;
 
 impl Ck {
-    pub fn evaluate(e: JExpr) -> JValue {
-        let mut ck = Ck::inject(e);
+    pub fn evaluate(e: JProg) -> JValue {
+        let JProg(defns, body) = e;
+        let delta = defns
+            .to_vec()
+            .into_iter()
+            .map(|defn| (defn.0, defn))
+            .collect();
+
+        let mut ck = Ck(delta, body, kret());
         while !ck.is_finished() {
             ck = ck.step()
         }
-        Ck::extract(ck)
-    }
 
-    pub fn inject(e: JExpr) -> Ck {
-        Ck(e, kret())
-    }
-
-    pub fn extract(ck: Ck) -> JValue {
-        match *ck.0 {
+        match *ck.1 {
             JExprBody::JVal(v) => v,
-            _ => panic!("extract called on non-jvalue ck: {:?}", ck),
+            _ => unreachable!()
         }
     }
 
+    // These are the theoretical interface but i'm just using evaluate()
+    // pub fn inject(e: JExpr) -> Ck {
+    //     Ck(e, kret())
+    // }
+
+    // pub fn extract(ck: Ck) -> JValue {
+    //     match *ck.0 {
+    //         JExprBody::JVal(v) => v,
+    //         _ => panic!("extract called on non-jvalue ck: {:?}", ck),
+    //     }
+    // }
+
     pub fn is_finished(&self) -> bool {
-        matches!((*self.0, *self.1), (JExprBody::JVal(_), ContBody::KRet))
+        matches!((*self.1, *self.2), (JExprBody::JVal(_), ContBody::KRet))
     }
 
     // Aka the arrow function |-> from lecture 4
@@ -126,33 +148,43 @@ impl Ck {
         use JExprBody::*;
         use JValue::*;
 
-        let orig_k = self.1;
+        let Ck(delta, body, orig_k) = self;
 
-        match (*self.0, *self.1) {
+        match (*body, *orig_k) {
             // Rule 1
-            (JIf(ec, et, ef), _) => Ck(ec, kif(et, ef, orig_k)),
+            (JIf(ec, et, ef), _) => Ck(delta, ec, kif(et, ef, orig_k)),
 
             // Rule 2
-            (JVal(JBool(false)), KIf(_et, ef, k)) => Ck(ef, k),
+            (JVal(JBool(false)), KIf(_et, ef, k)) => Ck(delta, ef, k),
 
             // Rule 3
-            (JVal(_), KIf(et, _ef, k)) => Ck(et, k),
+            (JVal(_), KIf(et, _ef, k)) => Ck(delta, et, k),
 
             // Rule 4
-            (JApply(e0, em), _) => Ck(e0, kapp([].into(), em, orig_k)),
+            (JApply(e0, em), _) => Ck(delta, e0, kapp([].into(), em, orig_k)),
 
             // Rule 5
             (JVal(v1), KApp(v, e, k)) if !e.is_empty() => {
                 // Reverse-order trick from lecture 4
                 let v = cons(v1, v);
                 let (e0, em) = e.head_tail().unwrap();
-                Ck(e0.clone(), kapp(v, em, k))
+                Ck(delta, *e0, kapp(v, em, k))
             }
 
-            // Rule 6
+            // Rule 6/7
             (JVal(vn), KApp(v, _e, k)) => {
                 let v = cons(vn, v);
-                Ck(jval(delta(v)), k)
+
+                // Lazy way to get last element
+                if let JFnRef(f) = v.to_vec().last().unwrap() {
+                    // Rule 7
+                    let JDefine(_f, xs, ebody) = delta[f];
+                    let ebody_prime = subst_arrow(xs, v, ebody);
+                    Ck(delta, ebody_prime, k)
+                } else {
+                    // Rule 6
+                    Ck(delta, jval(run_delta(v)), k)
+                }
             }
 
             // bottom
@@ -163,7 +195,7 @@ impl Ck {
 
 // Delta expects a list in reverse order, because of the ck machine
 // rule 5 reverse-order trick
-fn delta(list: List<JValue>) -> JValue {
+fn run_delta(list: List<JValue>) -> JValue {
     use JValue::*;
 
     // Lazy implementation using vec to reverse the list and get clean match code
@@ -198,4 +230,21 @@ fn subst(var: (JVarRef, JValue), e: JExpr) -> JExpr {
         JVarRef(y) if x == *y => jval(xv),
         _ => e,
     }
+}
+
+// Called by rule 7, so expects vs in reverse order because of rule 5 reverse order trick
+fn subst_arrow(xs: List<JVarRef>, vs: List<JValue>, mut e: JExpr) -> JExpr {
+    // Lazy impl using vecs for cleaner code
+    let xs = xs.to_vec();
+    let mut vs = vs.to_vec();
+    vs.pop();
+    vs.reverse();
+
+    assert_eq!(vs.len(), xs.len(), "bad param count");
+
+    for (x, v) in xs.iter().zip(vs.iter()) {
+        e = subst((x, *v), e);
+    }
+
+    e
 }
