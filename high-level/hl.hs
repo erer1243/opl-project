@@ -53,8 +53,16 @@ data SExpr = SESym String | SENum Integer | SEList [SExpr] deriving (Show, Eq)
 -- List of function definitions
 type Delta = [(JFnRef, JDefine)]
 
-pp :: JExpr -> String
-pp (JVal val) = case val of
+pp = ppJP
+
+ppJP :: JProg -> String
+ppJP (JProg defns body) = unlines $ map ppJD defns ++ [ppJE body]
+
+ppJD :: JDefine -> String
+ppJD (JDefine f xs ebody) = "(define (" ++ commaSep (f : xs) ++ ") " ++ ppJE ebody ++ ")"
+
+ppJE :: JExpr -> String
+ppJE (JVal val) = case val of
     JNum n -> show n
     JBool b -> show b
     JPlus -> "+"
@@ -67,11 +75,11 @@ pp (JVal val) = case val of
     JLtEq -> "<="
     JGtEq -> ">="
     JFnRef s -> s
-pp (JIf cond e1 e2) = "(if " ++ pp cond ++ " " ++ pp e1 ++ " " ++ pp e2 ++ ")"
-pp (JApply head args) = "(" ++ pp head ++ " " ++ printedArgs ++ ")"
+ppJE (JIf cond e1 e2) = "(if " ++ ppJE cond ++ " " ++ ppJE e1 ++ " " ++ ppJE e2 ++ ")"
+ppJE (JApply head args) = "(" ++ ppJE head ++ " " ++ printedArgs ++ ")"
   where
-    printedArgs = unwords $ map pp args
-pp (JVarRef s) = s
+    printedArgs = unwords $ map ppJE args
+ppJE (JVarRef s) = s
 
 -- Convenience alias
 interp = interpJProg
