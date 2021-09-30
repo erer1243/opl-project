@@ -178,12 +178,6 @@ tests = [ (["prog", "<="], JLtEq)
                                                                 ["CollatzHighest", "x", "h"]]],
                     ["define", ["IsEven", "x"], ["=", "x", ["*", 2, ["/", "x", 2]]]],
                     ["CollatzHighest", 27, 0]], JNum 9232)
-        -- Dynamic scope tests
-        , (["prog", ["define", ["F", "x"], "y"],
-                    ["define", ["G", "y"], ["F", 0]],
-                    ["G", 1]], JFnRef "Test should fail")
-        , (["prog", ["define", ["F", "x"], "true"],
-                    ["if", ["F", 0], "x", "x"]], JFnRef "Test should fail")
         ]
 
 runTests :: IO ()
