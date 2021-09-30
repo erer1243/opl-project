@@ -50,7 +50,7 @@ pub fn cons<T>(data: T, tail: List<T>) -> List<T> {
 }
 
 impl<T> List<T> {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         List(None)
     }
 
@@ -95,6 +95,12 @@ impl<T: Clone> List<T> {
         }
 
         vec
+    }
+
+    // Panics if called on empty list
+    pub fn last(self) -> T {
+        // Only will ever use this with free-to-clone types
+        self.to_vec().last().unwrap().clone()
     }
 }
 

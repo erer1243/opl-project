@@ -80,8 +80,8 @@ pub struct Cont(Leak<ContBody>);
 #[derive(Clone, Copy, Debug)]
 pub enum ContBody {
     KRet,
-    KIf(JExpr, JExpr, Cont),
-    KApp(List<JValue>, List<JExpr>, Cont),
+    KIf(Env, JExpr, JExpr, Cont),
+    KApp(List<JValue>, Env, List<JExpr>, Cont),
 }
 
 // Convenience function to make constructing KRet cleaner
@@ -90,23 +90,23 @@ pub fn kret() -> Cont {
 }
 
 // Convenience function to make constructing KIf cleaner
-pub fn kif(et: JExpr, ef: JExpr, k: Cont) -> Cont {
-    Cont(Leak::new(ContBody::KIf(et, ef, k)))
+pub fn kif(env: Env, et: JExpr, ef: JExpr, k: Cont) -> Cont {
+    Cont(Leak::new(ContBody::KIf(env, et, ef, k)))
 }
 
 // Convenience function to make constructing KApp cleaner
-pub fn kapp(v: List<JValue>, e: List<JExpr>, k: Cont) -> Cont {
-    Cont(Leak::new(ContBody::KApp(v, e, k)))
+pub fn kapp(v: List<JValue>, env: Env, e: List<JExpr>, k: Cont) -> Cont {
+    Cont(Leak::new(ContBody::KApp(v, env, e, k)))
 }
 
-// Ck machine
+// Cek machine
 // st = <e, k>
 #[derive(Clone, Debug)]
-pub struct Ck(pub Delta, pub JExpr, pub Cont);
+pub struct Cek(Delta, JExpr, Env, Cont);
 
 type Delta = HashMap<JFnRef, JDefine>;
 
-impl Ck {
+impl Cek {
     pub fn evaluate(e: JProg) -> JValue {
         let JProg(defns, body) = e;
         let delta = defns
@@ -115,14 +115,14 @@ impl Ck {
             .map(|defn| (defn.0, defn))
             .collect();
 
-        let mut ck = Ck(delta, body, kret());
+        let mut ck = Cek(delta, body, Env::EMPTY, kret());
         while !ck.is_finished() {
             ck = ck.step()
         }
 
         match *ck.1 {
             JExprBody::JVal(v) => v,
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -139,55 +139,43 @@ impl Ck {
     // }
 
     pub fn is_finished(&self) -> bool {
-        matches!((*self.1, *self.2), (JExprBody::JVal(_), ContBody::KRet))
+        matches!((*self.1, *self.3), (JExprBody::JVal(_), ContBody::KRet))
     }
 
     // Aka the arrow function |-> from lecture 4
-    pub fn step(self) -> Ck {
+    pub fn step(self) -> Cek {
         use ContBody::*;
         use JExprBody::*;
         use JValue::*;
 
-        let Ck(delta, body, orig_k) = self;
+        #[allow(non_snake_case)]
+        let Cek(Δ, body, env, orig_k) = self;
 
+        // Rules from page 6-6
         match (*body, *orig_k) {
-            // Rule 1
-            (JIf(ec, et, ef), _) => Ck(delta, ec, kif(et, ef, orig_k)),
-
-            // Rule 2
-            (JVal(JBool(false)), KIf(_et, ef, k)) => Ck(delta, ef, k),
-
-            // Rule 3
-            (JVal(_), KIf(et, _ef, k)) => Ck(delta, et, k),
-
-            // Rule 4
-            (JApply(e0, em), _) => Ck(delta, e0, kapp([].into(), em, orig_k)),
-
-            // Rule 5
-            (JVal(v1), KApp(v, e, k)) if !e.is_empty() => {
+            (JVarRef(x), _k) => Cek(Δ, jval(env.get(x)), Env::EMPTY, orig_k),
+            (JIf(ec, et, ef ), _k) => Cek(Δ, ec, env, kif(env, et, ef, orig_k)),
+            (JVal(JBool(false)), KIf(envp, _et, ef, k)) => Cek(Δ, ef, envp, k),
+            (JVal(_), KIf(envp, et, _ef, k)) => Cek(Δ, et, envp, k),
+            (JApply(e0, em), _) => Cek(Δ, e0, env, kapp([].into(), env, em, orig_k)),
+            (JVal(v1), KApp(v, envp, e, k)) if !e.is_empty() => {
                 // Reverse-order trick from lecture 4
                 let v = cons(v1, v);
                 let (e0, em) = e.head_tail().unwrap();
-                Ck(delta, *e0, kapp(v, em, k))
+                Cek(Δ, *e0, envp, kapp(v, envp, em, k))
             }
-
-            // Rule 6/7
-            (JVal(vn), KApp(v, _e, k)) => {
+            (JVal(vn), KApp(v, _envp, _e, k)) => {
                 let v = cons(vn, v);
-
-                // Lazy way to get last element
-                if let JFnRef(f) = v.to_vec().last().unwrap() {
-                    // Rule 7
-                    let JDefine(_f, xs, ebody) = delta[f];
-                    let ebody_prime = subst_arrow(xs, v, ebody);
-                    Ck(delta, ebody_prime, k)
+                if let JFnRef(f) = v.last() {
+                    // Apply on function
+                    let JDefine(_f, xs, ebody) = Δ[f];
+                    let env = Env::from_func_apply(xs, v);
+                    Cek(Δ, ebody, env, k)
                 } else {
-                    // Rule 6
-                    Ck(delta, jval(run_delta(v)), k)
+                    // Apply on prim
+                    Cek(Δ, jval(run_delta(v)), Env::EMPTY, k)
                 }
             }
-
-            // bottom
             _ => unreachable!(),
         }
     }
@@ -216,35 +204,42 @@ fn run_delta(list: List<JValue>) -> JValue {
     }
 }
 
-// Substitute a single variable into a JExpr
-fn subst(var: (JVarRef, JValue), e: JExpr) -> JExpr {
-    use JExprBody::*;
+#[derive(Copy, Clone, Deref, Debug)]
+pub struct Env(List<(JVarRef, JValue)>);
 
-    let (x, xv) = var;
-    match &*e {
-        JIf(ec, et, ef) => jif(subst(var, *ec), subst(var, *et), subst(var, *ef)),
-        JApply(e0, em) => {
-            let params = em.to_vec().iter().map(|e| subst(var, *e)).collect();
-            japply(subst(var, *e0), params)
+impl Env {
+    pub const EMPTY: Env = Env(List::new());
+
+    pub fn cons(self, var: (JVarRef, JValue)) -> Env {
+        Env(cons(var, *self))
+    }
+
+    pub fn get(self, var_ref: JVarRef) -> JValue {
+        let mut curr = *self;
+
+        while let Some(((x, v), next)) = curr.head_tail() {
+            if *x == var_ref {
+                return *v;
+            }
+            curr = next;
         }
-        JVarRef(y) if x == *y => jval(xv),
-        _ => e,
-    }
-}
 
-// Called by rule 7, so expects vs in reverse order because of rule 5 reverse order trick
-fn subst_arrow(xs: List<JVarRef>, vs: List<JValue>, mut e: JExpr) -> JExpr {
-    // Lazy impl using vecs for cleaner code
-    let xs = xs.to_vec();
-    let mut vs = vs.to_vec();
-    vs.pop();
-    vs.reverse();
-
-    assert_eq!(vs.len(), xs.len(), "bad param count");
-
-    for (x, v) in xs.iter().zip(vs.iter()) {
-        e = subst((x, *v), e);
+        panic!("No var {} in environment", var_ref);
     }
 
-    e
+    pub fn from_func_apply(x: List<JVarRef>, v: List<JValue>) -> Env {
+        // Lazy impl using vecs for cleaner code
+        let x = x.to_vec();
+        let mut v = v.to_vec();
+        v.pop();
+        v.reverse();
+
+        assert_eq!(v.len(), x.len(), "bad param count");
+
+        let mut env = Env::EMPTY;
+        for (x, v) in x.iter().zip(v.iter()) {
+            env = env.cons((*x, *v));
+        }
+        env
+    }
 }

@@ -370,7 +370,7 @@ runTestInLL (se, ans) = do
                 , "fn main() {"
                 , "let expr =" ++ jeLL ++ ";"
                 , "let ans =" ++ ansLL ++ ";"
-                , "let val = Ck::evaluate(expr);"
+                , "let val = Cek::evaluate(expr);"
                 , "println!(\"answer={:?}\", val);"
                 , "if val != ans { println!(\"!!! Failure !!!\"); }"
                 , "}"
