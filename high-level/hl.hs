@@ -6,7 +6,7 @@ import GHC.Exts (IsList(..))
 import Data.String (IsString(..))
 
 import Data.List (intercalate)
-import System.Process (callCommand)
+import System.Process (spawnCommand, waitForProcess)
 import Control.Monad (forM_)
 import Data.Char (isUpper)
 
@@ -296,15 +296,21 @@ tests = [ (["prog", "<="], JLtEq)
                                                                 ["CollatzHighest", "x", "h"]]],
                     ["define", ["IsEven", "x"], ["=", "x", ["*", 2, ["/", "x", 2]]]],
                     ["CollatzHighest", 27, 0]], JNum 9232)
+        -- Dynamic scope tests
+        , (["prog", ["define", ["F", "x"], "y"],
+                    ["define", ["G", "y"], ["F", 0]],
+                    ["G", 1]], JFnRef "Test should fail")
+        , (["prog", ["define", ["F", "x"], "true"],
+                    ["if", ["F", 0], "x", "x"]], JFnRef "Test should fail")
         ]
 
 runTests :: IO ()
 runTests = do
-    putStrLn "Running tests in HL code:"
-    let testResults = map (uncurry checkSExpr) tests
-    let numSuccesses = length $ filter id testResults
-    let numFailures = length tests - numSuccesses
-    putStrLn $ show numSuccesses ++ " successes and " ++ show numFailures ++ " failures"
+    -- putStrLn "Running tests in HL code:"
+    -- let testResults = map (uncurry checkSExpr) tests
+    -- let numSuccesses = length $ filter id testResults
+    -- let numFailures = length tests - numSuccesses
+    -- putStrLn $ show numSuccesses ++ " successes and " ++ show numFailures ++ " failures"
 
     putStrLn "Running tests in LL code:"
     forM_ tests runTestInLL
@@ -377,7 +383,11 @@ runTestInLL (se, ans) = do
                 ]
 
     -- Run the test program
-    callCommand "cargo run --quiet --manifest-path=../low-level/Cargo.toml"
+    runCommand "cargo run --quiet --manifest-path=../low-level/Cargo.toml"
+
+-- Run a command and ignore exit code. We expect some tests to fail and exit failure
+runCommand :: String -> IO ()
+runCommand s = spawnCommand s >>= waitForProcess >> return ()
 
 main :: IO ()
 main = runTests
