@@ -153,27 +153,27 @@ impl Cek {
 
         // Rules from page 6-6
         match (*body, *orig_k) {
-            (JVarRef(x), _k) => Cek(Δ, jval(env.get(x)), env, orig_k),
+            (JVarRef(x), _k) => Cek(Δ, jval(env.get(x)), Env::EMPTY, orig_k),
             (JIf(ec, et, ef ), _k) => Cek(Δ, ec, env, kif(env, et, ef, orig_k)),
-            (JVal(JBool(false)), KIf(envp, _et, ef, k)) => Cek(Δ, ef, env.combine(envp), k),
-            (JVal(_), KIf(envp, et, _ef, k)) => Cek(Δ, et, env.combine(envp), k),
+            (JVal(JBool(false)), KIf(envp, _et, ef, k)) => Cek(Δ, ef, envp, k),
+            (JVal(_), KIf(envp, et, _ef, k)) => Cek(Δ, et, envp, k),
             (JApply(e0, em), _) => Cek(Δ, e0, env, kapp([].into(), env, em, orig_k)),
             (JVal(v1), KApp(v, envp, e, k)) if !e.is_empty() => {
                 // Reverse-order trick from lecture 4
                 let v = cons(v1, v);
                 let (e0, em) = e.head_tail().unwrap();
-                Cek(Δ, *e0, env.combine(envp), kapp(v, env.combine(envp), em, k))
+                Cek(Δ, *e0, envp, kapp(v, envp, em, k))
             }
             (JVal(vn), KApp(v, _envp, _e, k)) => {
                 let v = cons(vn, v);
                 if let JFnRef(f) = v.last() {
                     // Apply on function
                     let JDefine(_f, xs, ebody) = Δ[f];
-                    let env = Env::from_func_apply(env, xs, v);
+                    let env = Env::from_func_apply(xs, v);
                     Cek(Δ, ebody, env, k)
                 } else {
                     // Apply on prim
-                    Cek(Δ, jval(run_delta(v)), env, k)
+                    Cek(Δ, jval(run_delta(v)), Env::EMPTY, k)
                 }
             }
             _ => unreachable!(),
@@ -227,7 +227,7 @@ impl Env {
         panic!("No var {} in environment", var_ref);
     }
 
-    pub fn from_func_apply(mut env: Env, x: List<JVarRef>, v: List<JValue>) -> Env {
+    pub fn from_func_apply(x: List<JVarRef>, v: List<JValue>) -> Env {
         // Lazy impl using vecs for cleaner code
         let x = x.to_vec();
         let mut v = v.to_vec();
@@ -236,16 +236,10 @@ impl Env {
 
         assert_eq!(v.len(), x.len(), "bad param count");
 
-        // let mut env = Env::EMPTY;
+        let mut env = Env::EMPTY;
         for (x, v) in x.iter().zip(v.iter()) {
             env = env.cons((*x, *v));
         }
         env
-    }
-
-    pub fn combine(self, env: Env) -> Env {
-        let mut v = self.to_vec();
-        v.extend(env.to_vec());
-        Env(v.into_iter().collect())
     }
 }

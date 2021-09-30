@@ -259,46 +259,45 @@ checkSExpr expr = checkJExprBig (desugarJProg expr)
 
 -- [(program, expected_answer)]
 tests :: [(SExpr, JValue)]
-tests = [
-        -- (["prog", "<="], JLtEq)
-        -- , (["prog", ["+", ["*", 2, 2], 1]], JNum 5)
-        -- , (["prog", ["-", ["*", 5, ["+", 2, 3]]]], JNum (-25))
-        -- , (["prog", ["define", ["One"], 1], "One"], JFnRef "One")
-        -- , (["prog", ["define", ["One"], 1], ["One"]], JNum 1)
-        -- , (["prog", ["define", ["CallSingle", "f"], ["f"]],
-        --             ["define", ["One"], 1],
-        --             ["CallSingle", "One"]], JNum 1)
-        -- , (["prog", ["define", ["Double", "x"], ["+", "x", "x"]], ["Double", ["Double", 2]]], JNum 8)
-        -- , (["prog", ["define", ["Quintuple", "x"], ["+", "x", "x", "x", "x", "x"]],
-        --                        ["Quintuple", ["Quintuple", 1]]], JNum 25)
-        -- , (["prog", ["define", ["Quadruple", "x"], ["Double", ["Double", "x"]]],
-        --             ["define", ["Double", "x"], ["*", "x", 2]],
-        --             ["Quadruple", 4]], JNum 16)
-        -- , (["prog", ["define", ["Recurse", "x"], ["if", ["=", "x", 0],
-        --                                                 123,
-        --                                                 ["Recurse", ["-", "x", 1]]]],
-        --             ["Recurse", 10000]], JNum 123)
-        -- , (["prog", ["define", ["Recurse1", "x"], ["Recurse2", ["+", "x", 1]]],
-        --             ["define", ["Recurse2", "x"], ["if", [">", "x", 10000], "x", ["Recurse1", "x"]]],
-        --             ["Recurse1", 0]], JNum 10001)
-        -- , (["prog", ["define", ["Recurse1", "x"], ["Recurse2", ["+", "x", 2]]],
-        --             ["define", ["Recurse2", "x"], ["Recurse3", ["-", "x", 1]]],
-        --             ["define", ["Recurse3", "x"], ["if", [">", "x", 10000], "x", ["Recurse1", "x"]]],
-        --             ["Recurse1", 0]], JNum 10001)
+tests = [ (["prog", "<="], JLtEq)
+        , (["prog", ["+", ["*", 2, 2], 1]], JNum 5)
+        , (["prog", ["-", ["*", 5, ["+", 2, 3]]]], JNum (-25))
+        , (["prog", ["define", ["One"], 1], "One"], JFnRef "One")
+        , (["prog", ["define", ["One"], 1], ["One"]], JNum 1)
+        , (["prog", ["define", ["CallSingle", "f"], ["f"]],
+                    ["define", ["One"], 1],
+                    ["CallSingle", "One"]], JNum 1)
+        , (["prog", ["define", ["Double", "x"], ["+", "x", "x"]], ["Double", ["Double", 2]]], JNum 8)
+        , (["prog", ["define", ["Quintuple", "x"], ["+", "x", "x", "x", "x", "x"]],
+                               ["Quintuple", ["Quintuple", 1]]], JNum 25)
+        , (["prog", ["define", ["Quadruple", "x"], ["Double", ["Double", "x"]]],
+                    ["define", ["Double", "x"], ["*", "x", 2]],
+                    ["Quadruple", 4]], JNum 16)
+        , (["prog", ["define", ["Recurse", "x"], ["if", ["=", "x", 0],
+                                                        123,
+                                                        ["Recurse", ["-", "x", 1]]]],
+                    ["Recurse", 10000]], JNum 123)
+        , (["prog", ["define", ["Recurse1", "x"], ["Recurse2", ["+", "x", 1]]],
+                    ["define", ["Recurse2", "x"], ["if", [">", "x", 10000], "x", ["Recurse1", "x"]]],
+                    ["Recurse1", 0]], JNum 10001)
+        , (["prog", ["define", ["Recurse1", "x"], ["Recurse2", ["+", "x", 2]]],
+                    ["define", ["Recurse2", "x"], ["Recurse3", ["-", "x", 1]]],
+                    ["define", ["Recurse3", "x"], ["if", [">", "x", 10000], "x", ["Recurse1", "x"]]],
+                    ["Recurse1", 0]], JNum 10001)
         -- Evals to the highest number found during the collatz process for 27
-        -- , (["prog", ["define", ["CollatzHighest", "x", "h"], ["if", ["IsEven", "x"],
-        --                                                             ["Eq1", ["/", "x", 2], "h"],
-        --                                                             ["Eq1", ["+", 1, ["*", "x", 3]], "h"]]],
-        --             ["define", ["Eq1", "x", "h"], ["if", ["=", "x", 1],
-        --                                                  "h",
-        --                                                  ["NewHighest", "x", "h"]]],
-        --             ["define", ["NewHighest", "x", "h"], ["if", [">", "x", "h"],
-        --                                                         ["CollatzHighest", "x", "x"],
-        --                                                         ["CollatzHighest", "x", "h"]]],
-        --             ["define", ["IsEven", "x"], ["=", "x", ["*", 2, ["/", "x", 2]]]],
-        --             ["CollatzHighest", 27, 0]], JNum 9232)
+        , (["prog", ["define", ["CollatzHighest", "x", "h"], ["if", ["IsEven", "x"],
+                                                                    ["Eq1", ["/", "x", 2], "h"],
+                                                                    ["Eq1", ["+", 1, ["*", "x", 3]], "h"]]],
+                    ["define", ["Eq1", "x", "h"], ["if", ["=", "x", 1],
+                                                         "h",
+                                                         ["NewHighest", "x", "h"]]],
+                    ["define", ["NewHighest", "x", "h"], ["if", [">", "x", "h"],
+                                                                ["CollatzHighest", "x", "x"],
+                                                                ["CollatzHighest", "x", "h"]]],
+                    ["define", ["IsEven", "x"], ["=", "x", ["*", 2, ["/", "x", 2]]]],
+                    ["CollatzHighest", 27, 0]], JNum 9232)
         -- Dynamic scope tests
-        (["prog", ["define", ["F", "x"], "y"],
+        , (["prog", ["define", ["F", "x"], "y"],
                     ["define", ["G", "y"], ["F", 0]],
                     ["G", 1]], JFnRef "Test should fail")
         , (["prog", ["define", ["F", "x"], "true"],
