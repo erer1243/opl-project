@@ -50,9 +50,6 @@ type JVarRef = String
 -- to write SExprs like ["+", 1, 2]
 data SExpr = SESym String | SENum Integer | SEList [SExpr] deriving (Show, Eq)
 
--- List of function definitions
-type Delta = [(JFnRef, JDefine)]
-
 pp = ppJP
 
 ppJP :: JProg -> String
