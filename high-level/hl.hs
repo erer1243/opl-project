@@ -10,26 +10,24 @@ import System.Process (spawnCommand, waitForProcess)
 import Control.Monad (forM_)
 import Data.Char (isUpper)
 
--- prog ::= d... e
-data JProg = JProg [JDefine] JExpr deriving (Show, Eq)
+-- -- prog ::= d... e
+-- data JProg = JProg [JDefine] JExpr deriving (Show, Eq)
 
--- d ::= define (f x...) e
-data JDefine = JDefine JFnRef [JVarRef] JExpr deriving (Show, Eq)
+-- -- d ::= define (f x...) e
+-- data JDefine = JDefine JFnRef [JVarRef] JExpr deriving (Show, Eq)
 
--- e ::= v | (e e..) | (if e e e) | x
+-- e ::= v | (e e...) | (if e e e) | x
 data JExpr = JVal JValue
            | JApply JExpr [JExpr]
            | JIf JExpr JExpr JExpr
            | JVarRef JVarRef
            deriving (Show, Eq)
 
--- v ::= number | boolean | prim | f
--- prim ::= + | * | / | - | <= | < | = | > | >=
--- prim is not a separate data structure in my implementation
+-- v ::= number | boolean | prim | lambda (x...) e
 data JValue = JNum Integer
             | JBool Bool
             | JPlus | JMinus | JMult | JDiv | JLtEq | JLt | JEq | JGt | JGtEq
-            | JFnRef JFnRef
+            | JLambda [JVarRef] JExpr
             deriving (Show, Eq)
 
 -- E ::= [] | (if E e e) | (v.. E e..)
@@ -37,9 +35,6 @@ data Context = CHole
              | CIf Context JExpr JExpr
              | CApp [JValue] Context [JExpr]
              deriving (Show, Eq)
-
--- f ::= some set of functions
-type JFnRef = String
 
 -- x ::= some set of variables
 type JVarRef = String
@@ -50,16 +45,14 @@ type JVarRef = String
 -- to write SExprs like ["+", 1, 2]
 data SExpr = SESym String | SENum Integer | SEList [SExpr] deriving (Show, Eq)
 
-pp = ppJP
+-- ppJP :: JProg -> String
+-- ppJP (JProg defns body) = unlines $ map ppJD defns ++ [ppJE body]
 
-ppJP :: JProg -> String
-ppJP (JProg defns body) = unlines $ map ppJD defns ++ [ppJE body]
+-- ppJD :: JDefine -> String
+-- ppJD (JDefine f xs ebody) = "(define (" ++ commaSep (f : xs) ++ ") " ++ ppJE ebody ++ ")"
 
-ppJD :: JDefine -> String
-ppJD (JDefine f xs ebody) = "(define (" ++ commaSep (f : xs) ++ ") " ++ ppJE ebody ++ ")"
-
-ppJE :: JExpr -> String
-ppJE (JVal val) = case val of
+pp :: JExpr -> String
+pp (JVal val) = case val of
     JNum n -> show n
     JBool b -> show b
     JPlus -> "+"
@@ -71,53 +64,55 @@ ppJE (JVal val) = case val of
     JGt -> ">"
     JLtEq -> "<="
     JGtEq -> ">="
-    JFnRef s -> s
-ppJE (JIf cond e1 e2) = "(if " ++ ppJE cond ++ " " ++ ppJE e1 ++ " " ++ ppJE e2 ++ ")"
-ppJE (JApply head args) = "(" ++ ppJE head ++ " " ++ printedArgs ++ ")"
-  where
-    printedArgs = unwords $ map ppJE args
-ppJE (JVarRef s) = s
+    JLambda xs ebody -> "(λ (" ++ unwords (map (pp . JVarRef) xs) ++ ") " ++ pp ebody ++ ")"
+pp (JIf cond e1 e2) = "(if " ++ pp cond ++ " " ++ pp e1 ++ " " ++ pp e2 ++ ")"
+pp (JApply head args) = "(" ++ pp head ++ " " ++ unwords (map pp args) ++ ")"
+pp (JVarRef s) = s
 
 -- Convenience alias
-desugar = desugarJProg
+-- desugar = desugarJExpr
 
 -- The top level desugarer
-desugarJProg :: SExpr -> JProg
-desugarJProg (SEList (SESym "prog":body)) =
-    let defns = map desugarJDefine $ init body
-        main = desugarJExpr $ last body
-    in JProg defns main
-desugarJProg _ = undefined
+-- desugarJProg :: SExpr -> JProg
+-- desugarJProg (SEList (SESym "prog":body)) =
+--     let defns = map desugarJDefine $ init body
+--         main = desugarJExpr $ last body
+--     in JProg defns main
+-- desugarJProg _ = undefined
 
-desugarJDefine :: SExpr -> JDefine
-desugarJDefine (SEList [SESym "define", SEList (SESym name:params), body]) =
-    JDefine name (map unwrapSESym params) (desugarJExpr body)
-  where
-    unwrapSESym (SESym s) = s
-    unwrapSESym _ = undefined
-desugarJDefine _ = undefined
+-- desugarJDefine :: SExpr -> JDefine
+-- desugarJDefine (SEList [SESym "define", SEList (SESym name:params), body]) =
+--     JDefine name (map unwrapSESym params) (desugarJExpr body)
+--   where
+--     unwrapSESym (SESym s) = s
+--     unwrapSESym _ = undefined
+-- desugarJDefine _ = undefined
 
-desugarJExpr :: SExpr -> JExpr
-desugarJExpr (SENum n) = JVal $ JNum n
-desugarJExpr (SEList l) = case l of
+desugar :: SExpr -> JExpr
+desugar (SENum n) = JVal $ JNum n
+desugar (SEList l) = case l of
     -- +/* base cases
     [SESym "+"] -> JVal $ JNum 0
     [SESym "*"] -> JVal $ JNum 1
     -- +/* recursive cases
-    (plus@(SESym "+"):head:tail) -> JApply (JVal JPlus) [desugarJExpr head,
-                                                         desugarJExpr $ SEList $ plus : tail]
-    (mult@(SESym "*"):head:tail) -> JApply (JVal JMult) [desugarJExpr head,
-                                                         desugarJExpr $ SEList $ mult : tail]
+    (plus@(SESym "+"):head:tail) -> JApply (JVal JPlus) [desugar head,
+                                                         desugar $ SEList $ plus : tail]
+    (mult@(SESym "*"):head:tail) -> JApply (JVal JMult) [desugar head,
+                                                         desugar $ SEList $ mult : tail]
     -- negation
-    [SESym "-", e] -> JApply (JVal JMult) [JVal (JNum (-1)), desugarJExpr e]
+    [SESym "-", e] -> JApply (JVal JMult) [JVal (JNum (-1)), desugar e]
     -- conditional
-    [SESym "if", ec, et, ef] -> JIf (desugarJExpr ec) (desugarJExpr et) (desugarJExpr ef)
-    -- other apply
-    (sym@(SESym _):tail) -> JApply (desugarJExpr sym) (map desugarJExpr tail)
-
+    [SESym "if", ec, et, ef] -> JIf (desugar ec) (desugar et) (desugar ef)
+    -- lambda
+    [SESym "lambda", SEList xs, ebody] -> JVal $ JLambda (map unwrapSESym xs) (desugar ebody)
+    -- apply
+    (sym:tail) -> JApply (desugar sym) (map desugar tail)
     -- Error case
     l -> error $ "bad SEList " ++ show l
-desugarJExpr (SESym s) = case s of
+  where
+    unwrapSESym (SESym s) = s
+    unwrapSESym _ = undefined
+desugar (SESym s) = case s of
     -- Builtins
     "+" -> JVal JPlus
     "-" -> JVal JMinus
@@ -130,14 +125,9 @@ desugarJExpr (SESym s) = case s of
     ">=" -> JVal JGtEq
     "true" -> JVal $ JBool True
     "false" -> JVal $ JBool False
-    -- Function or variable, depending on uppercase/lowercase
-    s@(c:_) | isUpper c -> JVal $ JFnRef s
-            | otherwise -> JVarRef s
-    -- Empty string error case
-    _ -> undefined
+    s -> JVarRef s
 
--- [(program, expected_answer)]
-tests :: [(SExpr, JValue)]
+{- J2 tests, task says to keep them around
 tests = [ (["prog", "<="], JLtEq)
         , (["prog", ["+", ["*", 2, 2], 1]], JNum 5)
         , (["prog", ["-", ["*", 5, ["+", 2, 3]]]], JNum (-25))
@@ -176,19 +166,25 @@ tests = [ (["prog", "<="], JLtEq)
                     ["define", ["IsEven", "x"], ["=", "x", ["*", 2, ["/", "x", 2]]]],
                     ["CollatzHighest", 27, 0]], JNum 9232)
         ]
+-}
+
+-- [(program, expected_answer)]
+tests :: [(SExpr, JValue)]
+tests = [ ([["lambda", [], 1]], JNum 1)
+        ]
 
 runTests :: IO ()
 runTests = forM_ tests runTestInLL
 
--- Convert JProg to rust code
-jpToLL :: JProg -> String
-jpToLL (JProg defns main) = "JProg(" ++ listToLL (map jdToLL defns) ++ "," ++ jeToLL main ++ ")"
+-- -- Convert JProg to rust code
+-- jpToLL :: JProg -> String
+-- jpToLL (JProg defns main) = "JProg(" ++ listToLL (map jdToLL defns) ++ "," ++ jeToLL main ++ ")"
 
--- Convert JDefine to rust code
-jdToLL :: JDefine -> String
-jdToLL (JDefine name args body) = "JDefine(" ++ strToLL name ++ ","
-                                             ++ listToLL (map strToLL args) ++ ","
-                                             ++ jeToLL body ++ ")"
+-- -- Convert JDefine to rust code
+-- jdToLL :: JDefine -> String
+-- jdToLL (JDefine name args body) = "JDefine(" ++ strToLL name ++ ","
+--                                              ++ listToLL (map strToLL args) ++ ","
+--                                              ++ jeToLL body ++ ")"
 
 -- Converts a single JExpr to low level rust code.
 jeToLL :: JExpr -> String
@@ -211,7 +207,7 @@ jvToLL v = "JValue::" ++ case v of
     JEq -> "JEq"
     JGt -> "JGt"
     JGtEq -> "JGtEq"
-    JFnRef s -> "JFnRef(" ++ strToLL s ++ ")"
+    JLambda xs ebody -> "JLambda(" ++ commaSep [listToLL xs, jeToLL ebody] ++ ")"
 
 commaSep :: [String] -> String
 commaSep  = intercalate ", "
@@ -226,8 +222,8 @@ strToLL s = "\"" ++ s ++ "\""
 runTestInLL :: (SExpr, JValue) -> IO ()
 runTestInLL (se, ans) = do
     -- Convert to source code
-    let je = desugarJProg se
-    let jeLL = jpToLL je
+    let je = desugar se
+    let jeLL = jeToLL je
     let ansLL = jvToLL ans
 
     -- Print message
@@ -237,7 +233,8 @@ runTestInLL (se, ans) = do
 
     -- Write the source to the hlgen file
     writeFile "../low-level/src/hlgen.rs" $
-        unlines [ "use ll::*;"
+        unlines [ "#[allow(unused_imports)]"
+                , "use ll::*;"
                 , "fn main() {"
                 , "let expr =" ++ jeLL ++ ";"
                 , "let ans =" ++ ansLL ++ ";"

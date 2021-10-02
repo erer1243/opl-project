@@ -1,16 +1,7 @@
 mod util;
 
 use derive_more::Deref;
-use std::collections::HashMap;
 pub use util::*;
-
-// prog ::= d... e
-#[derive(Clone, Copy, Debug)]
-pub struct JProg(pub List<JDefine>, pub JExpr);
-
-// d ::= define (f x...) e
-#[derive(Clone, Copy, Debug)]
-pub struct JDefine(pub JFnRef, pub List<JVarRef>, pub JExpr);
 
 // JExpr pointer wrapper type
 #[derive(Copy, Clone, Deref, Debug)]
@@ -26,10 +17,11 @@ pub enum JExprBody {
     JVarRef(JVarRef),
 }
 
-// v ::= number | boolean | prim | f
-// prim ::= + | * | / | - | <= | < | = | > | >=
-// prim is not a separate data structure in my implementation
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+// x ::= some set of variable names
+type JVarRef = &'static str;
+
+// v ::= number | boolean | prim | lambda (x...) e
+#[derive(Copy, Clone, Debug)]
 pub enum JValue {
     JNum(i32),
     JBool(bool),
@@ -42,7 +34,7 @@ pub enum JValue {
     JEq,
     JGt,
     JGtEq,
-    JFnRef(JFnRef),
+    JLambda(List<JVarRef>, JExpr),
 }
 
 // Convenience function to make constructing JExpr::JIf cleaner
@@ -64,12 +56,6 @@ pub fn jval(v: JValue) -> JExpr {
 pub fn jvarref(vr: JVarRef) -> JExpr {
     JExpr(Leak::new(JExprBody::JVarRef(vr)))
 }
-
-// x ::= some set of variable names
-type JVarRef = &'static str;
-
-// f ::= some set of function names
-type JFnRef = &'static str;
 
 #[derive(Copy, Clone, Deref, Debug)]
 #[deref(forward)]
@@ -99,6 +85,7 @@ pub fn kapp(v: List<JValue>, env: Env, e: List<JExpr>, k: Cont) -> Cont {
     Cont(Leak::new(ContBody::KApp(v, env, e, k)))
 }
 
+/*
 // Cek machine
 // st = <e, k>
 #[derive(Clone, Debug)]
@@ -203,6 +190,7 @@ fn run_delta(list: List<JValue>) -> JValue {
         _ => panic!("delta hit bottom case, {:?}", vec),
     }
 }
+*/
 
 #[derive(Copy, Clone, Deref, Debug)]
 pub struct Env(List<(JVarRef, JValue)>);
