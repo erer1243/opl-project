@@ -10,12 +10,6 @@ import System.Process (spawnCommand, waitForProcess)
 import Control.Monad (forM_)
 import Data.Char (isUpper)
 
--- -- prog ::= d... e
--- data JProg = JProg [JDefine] JExpr deriving (Show, Eq)
-
--- -- d ::= define (f x...) e
--- data JDefine = JDefine JFnRef [JVarRef] JExpr deriving (Show, Eq)
-
 -- e ::= v | (e e...) | (if e e e) | x
 data JExpr = JVal JValue
            | JApply JExpr [JExpr]
@@ -45,12 +39,6 @@ type JVarRef = String
 -- to write SExprs like ["+", 1, 2]
 data SExpr = SESym String | SENum Integer | SEList [SExpr] deriving (Show, Eq)
 
--- ppJP :: JProg -> String
--- ppJP (JProg defns body) = unlines $ map ppJD defns ++ [ppJE body]
-
--- ppJD :: JDefine -> String
--- ppJD (JDefine f xs ebody) = "(define (" ++ commaSep (f : xs) ++ ") " ++ ppJE ebody ++ ")"
-
 pp :: JExpr -> String
 pp (JVal val) = case val of
     JNum n -> show n
@@ -68,25 +56,6 @@ pp (JVal val) = case val of
 pp (JIf cond e1 e2) = "(if " ++ pp cond ++ " " ++ pp e1 ++ " " ++ pp e2 ++ ")"
 pp (JApply head args) = "(" ++ pp head ++ " " ++ unwords (map pp args) ++ ")"
 pp (JVarRef s) = s
-
--- Convenience alias
--- desugar = desugarJExpr
-
--- The top level desugarer
--- desugarJProg :: SExpr -> JProg
--- desugarJProg (SEList (SESym "prog":body)) =
---     let defns = map desugarJDefine $ init body
---         main = desugarJExpr $ last body
---     in JProg defns main
--- desugarJProg _ = undefined
-
--- desugarJDefine :: SExpr -> JDefine
--- desugarJDefine (SEList [SESym "define", SEList (SESym name:params), body]) =
---     JDefine name (map unwrapSESym params) (desugarJExpr body)
---   where
---     unwrapSESym (SESym s) = s
---     unwrapSESym _ = undefined
--- desugarJDefine _ = undefined
 
 desugar :: SExpr -> JExpr
 desugar (SENum n) = JVal $ JNum n
@@ -175,16 +144,6 @@ tests = [ ([["lambda", [], 1]], JNum 1)
 
 runTests :: IO ()
 runTests = forM_ tests runTestInLL
-
--- -- Convert JProg to rust code
--- jpToLL :: JProg -> String
--- jpToLL (JProg defns main) = "JProg(" ++ listToLL (map jdToLL defns) ++ "," ++ jeToLL main ++ ")"
-
--- -- Convert JDefine to rust code
--- jdToLL :: JDefine -> String
--- jdToLL (JDefine name args body) = "JDefine(" ++ strToLL name ++ ","
---                                              ++ listToLL (map strToLL args) ++ ","
---                                              ++ jeToLL body ++ ")"
 
 -- Converts a single JExpr to low level rust code.
 jeToLL :: JExpr -> String
