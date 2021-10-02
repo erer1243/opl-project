@@ -34,11 +34,21 @@ impl<T: Debug> Debug for Leak<T> {
     }
 }
 
+impl<T: PartialEq> PartialEq<Leak<T>> for Leak<T> {
+    fn eq(&self, other: &Leak<T>) -> bool {
+        self.deref().eq(other)
+    }
+}
+
+impl<T: Eq> Eq for Leak<T> {}
+
 // Linked list built with the Leak type
+#[derive(PartialEq, Eq)]
 pub struct List<T>(Link<T>);
 
 type Link<T> = Option<Leak<Node<T>>>;
 
+#[derive(PartialEq, Eq)]
 struct Node<T> {
     data: T,
     next: Link<T>,
@@ -159,4 +169,19 @@ fn linked_list_test() {
     assert_eq!(*h0, 1);
     assert_eq!(*h1, 2);
     assert_eq!(*h2, 3);
+
+    let l1 = List::from([1, 2, 3]);
+    let l2 = List::from([1, 2, 3]);
+    let l3 = List::from([1, 2, 3, 4]);
+    assert_eq!(l1, l1);
+    assert_eq!(l1, l2);
+    assert_ne!(l1, l3);
+}
+
+#[test]
+fn leak_eq_test() {
+    assert_eq!(Leak::new(5), Leak::new(5));
+    assert_ne!(Leak::new(5), Leak::new(6));
+    let five = Leak::new(5);
+    assert_eq!(five, five);
 }

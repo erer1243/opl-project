@@ -4,12 +4,12 @@ use derive_more::Deref;
 pub use util::*;
 
 // JExpr pointer wrapper type
-#[derive(Copy, Clone, Deref, Debug)]
+#[derive(Copy, Clone, Deref, Debug, PartialEq, Eq)]
 #[deref(forward)]
 pub struct JExpr(Leak<JExprBody>);
 
 // e ::= v | (e e..) | (if e e e) | x
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum JExprBody {
     JVal(JValue),
     JIf(JExpr, JExpr, JExpr),
@@ -21,7 +21,7 @@ pub enum JExprBody {
 type JVarRef = &'static str;
 
 // v ::= number | boolean | prim | lambda (x...) e
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum JValue {
     JNum(i32),
     JBool(bool),
