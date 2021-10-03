@@ -8,7 +8,7 @@ node_count() {
 NODES="$(node_count)"
 if [ $(hostname) = small ]; then
 	CHROMIUM=chromium
-	EDITCMD="alacritty -e vim high-level/hl.hs & disown"
+	EDITCMD="alacritty -e vim '+set expandtab' '+set tabstop=4' '+set number' -p high-level/hl.hs low-level/src/*.rs & disown"
 else
 	CHROMIUM=chromium-freeworld
 	EDITCMD="sublime_text -a ."
