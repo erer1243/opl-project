@@ -8,7 +8,6 @@ import Data.String (IsString(..))
 import Data.List (intercalate)
 import System.Process (spawnCommand, waitForProcess)
 import Control.Monad (forM_)
-import Data.Char (isUpper)
 
 -- e ::= v | (e e...) | (if e e e) | x
 data JExpr = JVal JValue
@@ -54,7 +53,8 @@ pp (JVal val) = case val of
     JGtEq -> ">="
     JLambda xs ebody -> "(λ (" ++ unwords (map (pp . JVarRef) xs) ++ ") " ++ pp ebody ++ ")"
 pp (JIf cond e1 e2) = "(if " ++ pp cond ++ " " ++ pp e1 ++ " " ++ pp e2 ++ ")"
-pp (JApply head args) = "(" ++ pp head ++ " " ++ unwords (map pp args) ++ ")"
+pp (JApply head args) = let ppArgs = if null args then "" else " " ++ unwords (map pp args)
+                        in "(" ++ pp head ++ ppArgs ++ ")"
 pp (JVarRef s) = s
 
 desugar :: SExpr -> JExpr
@@ -74,13 +74,13 @@ desugar (SEList l) = case l of
     [SESym "if", ec, et, ef] -> JIf (desugar ec) (desugar et) (desugar ef)
     -- lambda
     [SESym "lambda", SEList xs, ebody] -> JVal $ JLambda (map unwrapSESym xs) (desugar ebody)
+    -- let form
+    [SESym "let", SEList binds, ebody] -> let (xs, es) = desugarLetPairs binds
+                                          in JApply (JVal $ JLambda xs (desugar ebody)) es
     -- apply
     (sym:tail) -> JApply (desugar sym) (map desugar tail)
     -- Error case
     l -> error $ "bad SEList " ++ show l
-  where
-    unwrapSESym (SESym s) = s
-    unwrapSESym _ = undefined
 desugar (SESym s) = case s of
     -- Builtins
     "+" -> JVal JPlus
@@ -95,6 +95,18 @@ desugar (SESym s) = case s of
     "true" -> JVal $ JBool True
     "false" -> JVal $ JBool False
     s -> JVarRef s
+
+-- Helper for desugaring let expressions
+desugarLetPairs :: [SExpr] -> ([JVarRef], [JExpr])
+desugarLetPairs binds = helper binds [] []
+  where
+    helper [] xs es = (map unwrapSESym xs, map desugar es)
+    helper (x:v:t) xs es = helper t (x:xs) (v:es)
+    helper _ _ _ = error $ "let has odd # of args to bindings: " ++ show binds
+
+unwrapSESym :: SExpr -> String
+unwrapSESym (SESym s) = s
+unwrapSESym se = error $ "unwrapSESym on " ++ show se
 
 {- J2 tests, task says to keep them around
 tests = [ (["prog", "<="], JLtEq)
@@ -183,7 +195,7 @@ jvToLL v = "JValue::" ++ case v of
     JEq -> "JEq"
     JGt -> "JGt"
     JGtEq -> "JGtEq"
-    JLambda xs ebody -> "JLambda(" ++ commaSep [listToLL xs, jeToLL ebody] ++ ")"
+    JLambda xs ebody -> "JLambda(" ++ commaSep [listToLL (map strToLL xs), jeToLL ebody] ++ ")"
 
 commaSep :: [String] -> String
 commaSep  = intercalate ", "
@@ -205,6 +217,7 @@ runTestInLL (se, ans) = do
     -- Print message
     putStrLn "========================="
     putStrLn $ "test=" ++ show se
+    putStrLn $ "expr=" ++ pp je
     putStrLn $ "expecting=" ++ show ans
 
     -- Write the source to the hlgen file
