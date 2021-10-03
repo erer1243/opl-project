@@ -139,7 +139,24 @@ tests = [ (["prog", "<="], JLtEq)
 
 -- [(program, expected_answer)]
 tests :: [(SExpr, JValue)]
-tests = [ ([["lambda", [], 1]], JNum 1)
+tests = [ (1, JNum 1)
+        , ("<=", JLtEq)
+        , ([["lambda", [], 1]], JNum 1)
+        , (["let", [], ["-", 25]], JNum (-25))
+        , (["let", ["x", 1], "x"], JNum 1)
+        , (["let", ["x", 1, "y", 2], ["+", "x", "y"]], JNum 3)
+        , (["let", ["x", -1, "y", 10, "z", 30], ["*", "x", "y", "z"]], JNum (-300))
+        , (["let", ["add1", ["lambda", ["x"], ["+", "x", 1]]], ["add1", 20]], JNum 21)
+        , (["let", ["app1", ["lambda", ["f"], ["f", 1]],
+                    "add1", ["lambda", ["x"], ["+", "x", 1]]], ["app1", "add1", 5]], JNum 6)
+        , (["let", ["prim", ["if", [">", 10, 11], ">", "<="]], ["prim", 3, 2]], JBool True)
+        , (["let", ["x", 1], ["let", ["y", 2], ["let", ["p", "+", "z", 5],
+                                                       ["p", "z", "y", ["-", "x"]]]]], JNum 6)
+        , (["let", ["curryMult", ["lambda", ["x"],
+                                            ["lambda", ["y"], ["*", "x", "y"]]],
+                    "mult5", ["curryMult", 5],
+                    "mult10", ["curryMult", 10]],
+                   ["+", ["mult5", 20], ["mult10", 5]]], JNum 150)
         ]
 
 runTests :: IO ()
