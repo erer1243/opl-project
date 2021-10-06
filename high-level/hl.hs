@@ -159,16 +159,18 @@ tests = [ (1, JNum 1)
         , (["let", ["x", 1, "y", 2], ["+", "x", "y"]], JNum 3)
         , (["let", ["x", -1, "y", 10, "z", 30], ["*", "x", "y", "z"]], JNum (-300))
         , (["let", ["add1", ["lambda", ["x"], ["+", "x", 1]]], ["add1", 20]], JNum 21)
-        , (["let", ["app1", ["lambda", ["f"], ["f", 1]],
+        , (["let", ["app0", ["lambda", ["f"], ["f"]],
+                    "one", ["lambda", [], 1]],
+                   ["app0", "one"]], JNum 1)
+        , (["let", ["app1", ["lambda", ["f", "x"], ["f", "x"]],
                     "add1", ["lambda", ["x"], ["+", "x", 1]]], ["app1", "add1", 5]], JNum 6)
-        , (["let", ["prim", ["if", [">", 10, 11], ">", "<="]], ["prim", 3, 2]], JBool True)
+        , (["let", ["prim", ["if", [">", 10, 11], ">", "<="]], ["prim", 3, 2]], JBool False)
         , (["let", ["x", 1], ["let", ["y", 2], ["let", ["p", "+", "z", 5],
-                                                       ["p", "z", "y", ["-", "x"]]]]], JNum 6)
-        , (["let", ["curryMult", ["lambda", ["x"],
-                                            ["lambda", ["y"], ["*", "x", "y"]]],
-                    "mult5", ["curryMult", 5],
-                    "mult10", ["curryMult", 10]],
-                   ["+", ["mult5", 20], ["mult10", 5]]], JNum 150)
+                                                       ["p", "z", ["p", "y", ["-", "x"]]]]]], JNum 6)
+        , (["let", ["curriedMult", ["lambda", ["x"], ["lambda", ["y"], ["*", "x", "y"]]]],
+                   ["let",  ["mult5", ["curriedMult", 5],
+                             "mult10", ["curriedMult", 10]],
+                            ["+", ["mult5", 20], ["mult10", 5]]]], JNum 150)
         ]
 
 runTests :: IO ()
@@ -229,7 +231,7 @@ runTestInLL (se, ans) = do
                 , "let ans =" ++ ansLL ++ ";"
                 , "let val = Cek::evaluate(expr);"
                 , "println!(\"answer={:?}\", val);"
-                , "if val != ans { println!(\"!!! Failure !!!\"); }"
+                , "if val != ans { panic!(\"!!! Test Failure !!!\"); }"
                 , "}"
                 ]
 
