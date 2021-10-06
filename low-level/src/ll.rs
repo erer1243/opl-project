@@ -1,6 +1,6 @@
 mod util;
 
-use derive_more::Deref;
+use derive_more::{Deref, IsVariant, Unwrap};
 pub use util::*;
 
 // JExpr pointer wrapper type
@@ -9,7 +9,7 @@ pub use util::*;
 pub struct JExpr(Leak<JExprBody>);
 
 // e ::= v | (e e..) | (if e e e) | x
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Unwrap, IsVariant)]
 pub enum JExprBody {
     JVal(JValue),
     JIf(JExpr, JExpr, JExpr),
@@ -21,7 +21,7 @@ pub enum JExprBody {
 type JVarRef = &'static str;
 
 // v ::= number | boolean | prim | lambda (x...) e
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, IsVariant, Unwrap)]
 pub enum JValue {
     JNum(i32),
     JBool(bool),
@@ -35,6 +35,10 @@ pub enum JValue {
     JGt,
     JGtEq,
     JLambda(List<JVarRef>, JExpr),
+
+    // Closure type used in the CEK1 machine
+    // This should never be used anywhere outside of Cek::step
+    JClosure(List<JVarRef>, JExpr, Env),
 }
 
 // Convenience function to make constructing JExpr::JIf cleaner
@@ -63,7 +67,7 @@ pub struct Cont(Leak<ContBody>);
 
 // K ::= KRet | (KIf e e K) | (KApp (v..) (e..) K)
 // Aka Continuation
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, IsVariant)]
 pub enum ContBody {
     KRet,
     KIf(Env, JExpr, JExpr, Cont),
@@ -85,32 +89,27 @@ pub fn kapp(v: List<JValue>, env: Env, e: List<JExpr>, k: Cont) -> Cont {
     Cont(Leak::new(ContBody::KApp(v, env, e, k)))
 }
 
-/*
 // Cek machine
 // st = <e, k>
-#[derive(Clone, Debug)]
-pub struct Cek(Delta, JExpr, Env, Cont);
-
-type Delta = HashMap<JFnRef, JDefine>;
+#[derive(Clone)]
+pub struct Cek(JExpr, Env, Cont);
 
 impl Cek {
-    pub fn evaluate(e: JProg) -> JValue {
-        let JProg(defns, body) = e;
-        let delta = defns
-            .to_vec()
-            .into_iter()
-            .map(|defn| (defn.0, defn))
-            .collect();
+    pub fn evaluate(e: JExpr) -> JValue {
+        let mut ck = Cek(e, Env::EMPTY, kret());
 
-        let mut ck = Cek(delta, body, Env::EMPTY, kret());
         while !ck.is_finished() {
-            ck = ck.step()
+            // ck.print_debug();
+            ck = ck.step();
         }
+        // ck.print_debug();
 
-        match *ck.1 {
-            JExprBody::JVal(v) => v,
-            _ => unreachable!(),
-        }
+        // match *ck.0 {
+        //     JExprBody::JVal(v) => v,
+        //     _ => unreachable!(),
+        // }
+        // Use derive_more::Unwrap method
+        ck.0.unwrap_j_val()
     }
 
     // These are the theoretical interface but i'm just using evaluate()
@@ -125,8 +124,18 @@ impl Cek {
     //     }
     // }
 
-    pub fn is_finished(&self) -> bool {
-        matches!((*self.1, *self.3), (JExprBody::JVal(_), ContBody::KRet))
+    #[allow(dead_code)]
+    fn print_debug(&self) {
+        println!("== {:?}", self.0);
+        println!("== {:?}", self.1);
+        println!("== {:?}", self.2);
+        println!();
+    }
+
+    fn is_finished(&self) -> bool {
+        // matches!((*self.0, *self.2), (JExprBody::JVal(_), ContBody::KRet))
+        // Use derive_more::IsVariant methods for clarity
+        self.0.is_j_val() && self.2.is_k_ret()
     }
 
     // Aka the arrow function |-> from lecture 4
@@ -135,49 +144,62 @@ impl Cek {
         use JExprBody::*;
         use JValue::*;
 
-        #[allow(non_snake_case)]
-        let Cek(Δ, body, env, orig_k) = self;
+        let Cek(body, env, orig_k) = self;
 
-        // Rules from page 6-6
+        // Rules from 6-6 plus lambda/closure rules from 6-11
         match (*body, *orig_k) {
-            (JVarRef(x), _k) => Cek(Δ, jval(env.get(x)), Env::EMPTY, orig_k),
-            (JIf(ec, et, ef ), _k) => Cek(Δ, ec, env, kif(env, et, ef, orig_k)),
-            (JVal(JBool(false)), KIf(envp, _et, ef, k)) => Cek(Δ, ef, envp, k),
-            (JVal(_), KIf(envp, et, _ef, k)) => Cek(Δ, et, envp, k),
-            (JApply(e0, em), _) => Cek(Δ, e0, env, kapp([].into(), env, em, orig_k)),
+            // Rules 1..5 from 6-6
+            (JVarRef(x), _k) => Cek(jval(env.get(x)), Env::EMPTY, orig_k),
+            (JIf(ec, et, ef), _k) => Cek(ec, env, kif(env, et, ef, orig_k)),
+            (JVal(JBool(false)), KIf(envp, _et, ef, k)) => Cek(ef, envp, k),
+            (JVal(_), KIf(envp, et, _ef, k)) => Cek(et, envp, k),
+            (JApply(e0, em), _) => Cek(e0, env, kapp([].into(), env, em, orig_k)),
+
+            // Lambda to closure (rule 1) from 6-11
+            (JVal(JLambda(xs, ebody)), _k) => Cek(jval(JClosure(xs, ebody, env)), env, orig_k),
+
+            // Rule 6 from 6-6
+            // Apply where some parameters need to be evaluated
             (JVal(v1), KApp(v, envp, e, k)) if !e.is_empty() => {
                 // Reverse-order trick from lecture 4
+                // Values in v are stored in reverse order compared with e
                 let v = cons(v1, v);
                 let (e0, em) = e.head_tail().unwrap();
-                Cek(Δ, *e0, envp, kapp(v, envp, em, k))
+                Cek(*e0, envp, kapp(v, envp, em, k))
             }
+
+            // Combination of two rules (6-6 rule 7 and 6-11 rule 2)
+            // Apply where all parameters have been evaluated to values
             (JVal(vn), KApp(v, _envp, _e, k)) => {
                 let v = cons(vn, v);
-                if let JFnRef(f) = v.last() {
-                    // Apply on function
-                    let JDefine(_f, xs, ebody) = Δ[f];
-                    let env = Env::from_func_apply(xs, v);
-                    Cek(Δ, ebody, env, k)
+
+                if let JClosure(xs, ebody, envp) = v.last() {
+                    // Closure eval (rule 2) from 6-11
+                    // apply where we are applying to a closure
+                    let env = Env::from_func_apply(envp, xs, v);
+                    Cek(ebody, env, k)
                 } else {
-                    // Apply on prim
-                    Cek(Δ, jval(run_delta(v)), Env::EMPTY, k)
+                    // Rule 7 from 6-6
+                    // Apply where we are applying to a prim
+                    Cek(run_delta(v), Env::EMPTY, k)
                 }
             }
+
             _ => unreachable!(),
         }
     }
 }
 
-// Delta expects a list in reverse order, because of the ck machine
+// Delta expects a list in reverse order, because of the cek machine
 // rule 5 reverse-order trick
-fn run_delta(list: List<JValue>) -> JValue {
+fn run_delta(list: List<JValue>) -> JExpr {
     use JValue::*;
 
     // Lazy implementation using vec to reverse the list and get clean match code
     let mut vec = list.to_vec();
     vec.reverse();
 
-    match vec[..] {
+    let v = match vec[..] {
         [JPlus, JNum(a), JNum(b)] => JNum(a + b),
         [JMinus, JNum(a), JNum(b)] => JNum(a - b),
         [JMult, JNum(a), JNum(b)] => JNum(a * b),
@@ -188,11 +210,12 @@ fn run_delta(list: List<JValue>) -> JValue {
         [JGt, JNum(a), JNum(b)] => JBool(a > b),
         [JGtEq, JNum(a), JNum(b)] => JBool(a >= b),
         _ => panic!("delta hit bottom case, {:?}", vec),
-    }
-}
-*/
+    };
 
-#[derive(Copy, Clone, Deref, Debug)]
+    jval(v)
+}
+
+#[derive(Copy, Clone, Deref, Debug, Eq, PartialEq)]
 pub struct Env(List<(JVarRef, JValue)>);
 
 impl Env {
@@ -215,16 +238,18 @@ impl Env {
         panic!("No var {} in environment", var_ref);
     }
 
-    pub fn from_func_apply(x: List<JVarRef>, v: List<JValue>) -> Env {
+    // Generate an env for a closure body
+    // Expects v to be in reverse and contain the closure at the end, so no manipulation of v
+    // is needed in Cek::step
+    pub fn from_func_apply(mut env: Env, x: List<JVarRef>, v: List<JValue>) -> Env {
         // Lazy impl using vecs for cleaner code
         let x = x.to_vec();
         let mut v = v.to_vec();
         v.pop();
         v.reverse();
 
-        assert_eq!(v.len(), x.len(), "bad param count");
+        assert_eq!(v.len(), x.len(), "bad apply param count");
 
-        let mut env = Env::EMPTY;
         for (x, v) in x.iter().zip(v.iter()) {
             env = env.cons((*x, *v));
         }
