@@ -77,6 +77,11 @@ desugar (SEList l) = case l of
     -- let form
     [SESym "let", SEList binds, ebody] -> let (xs, es) = desugarLetPairs binds
                                           in JApply (JVal $ JLambda xs (desugar ebody)) es
+    -- let* form base case
+    [SESym "let*", SEList [], ebody] -> desugar ebody
+    -- let* form recursive case
+    [SESym "let*", SEList (x:e:binds), ebody] -> desugar ["let", [x, e],
+                                                                 ["let*", SEList binds, ebody]]
     -- apply
     (sym:tail) -> JApply (desugar sym) (map desugar tail)
     -- Error case
@@ -171,6 +176,11 @@ tests = [ (1, JNum 1)
                    ["let",  ["mult5", ["curriedMult", 5],
                              "mult10", ["curriedMult", 10]],
                             ["+", ["mult5", 20], ["mult10", 5]]]], JNum 150)
+        , (["let*", ["x", 5, "y", ["+", "x", 10], "z", ["*", "x", "y", 3]], "z"], JNum 225)
+        , (["let*", ["curriedAdd", ["lambda", ["x"], ["lambda", ["y"], ["+", "x", "y"]]],
+                     "add5", ["curriedAdd", 5],
+                     "add10", ["curriedAdd", 10]],
+                    ["add10", ["add5", ["add10", 100]]]], JNum 125)
         ]
 
 runTests :: IO ()
