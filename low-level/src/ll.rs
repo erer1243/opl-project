@@ -248,7 +248,7 @@ impl Env {
         v.pop();
         v.reverse();
 
-        assert_eq!(v.len(), x.len(), "bad apply param count");
+        assert_eq!(x.len(), v.len(), "apply expected {} arg(s), got {}", x.len(), v.len());
 
         for (x, v) in x.iter().zip(v.iter()) {
             env = env.cons((*x, *v));
