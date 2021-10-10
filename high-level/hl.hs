@@ -115,12 +115,14 @@ unwrapSESym se = error $ "unwrapSESym on " ++ show se
 
 -- [(program, expected_answer)]
 tests :: [(SExpr, JValue)]
-tests = [ (1, JNum 1)
+tests = [
+          -- Basic functionality tests
+          (1, JNum 1)
         , ("<=", JLtEq)
         , ([["lambda", [], 1]], JNum 1)
         , (["let", [], ["-", 25]], JNum (-25))
         , (["let", ["x", 1], "x"], JNum 1)
-        , (["let", ["x", 1, "y", 2], ["+", "x", "y"]], JNum 3)
+        , (["let", ["x", 1, "y", 2, "z", 3], ["+", "x", "y", "z"]], JNum 6)
         , (["let", ["x", -1, "y", 10, "z", 30], ["*", "x", "y", "z"]], JNum (-300))
         , (["let", ["add1", ["lambda", ["x"], ["+", "x", 1]]], ["add1", 20]], JNum 21)
         , (["let", ["app0", ["lambda", ["f"], ["f"]],
@@ -131,6 +133,12 @@ tests = [ (1, JNum 1)
         , (["let", ["prim", ["if", [">", 10, 11], ">", "<="]], ["prim", 3, 2]], JBool False)
         , (["let", ["x", 1], ["let", ["y", 2], ["let", ["p", "+", "z", 5],
                                                        ["p", "z", ["p", "y", ["-", "x"]]]]]], JNum 6)
+        -- Shadowing variables test
+        , (["let", ["x", 5], ["let", ["x", 10], "x"]], JNum 10)
+        , (["let*", ["x", 5, "x", 10], "x"], JNum 10)
+        , (["let", ["x", 10, "f", ["lambda", ["x"], "x"]], ["+", "x", ["f", 5]]], JNum 15)
+
+        -- Testing of closing over variables
         , (["let", ["curriedMult", ["lambda", ["x"], ["lambda", ["y"], ["*", "x", "y"]]]],
                    ["let",  ["mult5", ["curriedMult", 5],
                              "mult10", ["curriedMult", 10]],
@@ -140,6 +148,7 @@ tests = [ (1, JNum 1)
                      "add5", ["curriedAdd", 5],
                      "add10", ["curriedAdd", 10]],
                     ["add10", ["add5", ["add10", 100]]]], JNum 125)
+
         -- Task 35 lambda calculus/factorial tests
         , (task35Test ["numToJ3", ["factorial", "zero"]], JNum 1)
         , (task35Test ["numToJ3", ["factorial", "one"]], JNum 1)
