@@ -99,30 +99,11 @@ impl Cek {
         let mut ck = Cek(e, Env::EMPTY, kret());
 
         while !ck.is_finished() {
-            // ck.print_debug();
             ck = ck.step();
         }
-        // ck.print_debug();
 
-        // match *ck.0 {
-        //     JExprBody::JVal(v) => v,
-        //     _ => unreachable!(),
-        // }
-        // Use derive_more::Unwrap method
         ck.0.unwrap_j_val()
     }
-
-    // These are the theoretical interface but i'm just using evaluate()
-    // pub fn inject(e: JExpr) -> Ck {
-    //     Ck(e, kret())
-    // }
-
-    // pub fn extract(ck: Ck) -> JValue {
-    //     match *ck.0 {
-    //         JExprBody::JVal(v) => v,
-    //         _ => panic!("extract called on non-jvalue ck: {:?}", ck),
-    //     }
-    // }
 
     #[allow(dead_code)]
     fn print_debug(&self) {
@@ -133,8 +114,6 @@ impl Cek {
     }
 
     fn is_finished(&self) -> bool {
-        // matches!((*self.0, *self.2), (JExprBody::JVal(_), ContBody::KRet))
-        // Use derive_more::IsVariant methods for clarity
         self.0.is_j_val() && self.2.is_k_ret()
     }
 
