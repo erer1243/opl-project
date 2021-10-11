@@ -16,11 +16,11 @@ data JExpr = JVal JValue
            | JVarRef JVarRef
            deriving (Show, Eq)
 
--- v ::= number | boolean | prim | lambda (x...) e
+-- v ::= number | boolean | prim | lambda x (x...) e
 data JValue = JNum Integer
             | JBool Bool
             | JPlus | JMinus | JMult | JDiv | JLtEq | JLt | JEq | JGt | JGtEq
-            | JLambda [JVarRef] JExpr
+            | JLambda JVarRef [JVarRef] JExpr
             deriving (Show, Eq)
 
 -- E ::= [] | (if E e e) | (v.. E e..)
@@ -51,7 +51,8 @@ pp (JVal val) = case val of
     JGt -> ">"
     JLtEq -> "<="
     JGtEq -> ">="
-    JLambda xs ebody -> "(λ (" ++ unwords (map (pp . JVarRef) xs) ++ ") " ++ pp ebody ++ ")"
+    JLambda f xs ebody -> "(λ " ++ f ++ " (" ++ unwords (map (pp . JVarRef) xs) ++ ") " ++ pp ebody
+                            ++ ")"
 pp (JIf cond e1 e2) = "(if " ++ pp cond ++ " " ++ pp e1 ++ " " ++ pp e2 ++ ")"
 pp (JApply head args) = let ppArgs = if null args then "" else " " ++ unwords (map pp args)
                         in "(" ++ pp head ++ ppArgs ++ ")"
@@ -230,7 +231,8 @@ jvToLL v = "JValue::" ++ case v of
     JEq -> "JEq"
     JGt -> "JGt"
     JGtEq -> "JGtEq"
-    JLambda xs ebody -> "JLambda(" ++ commaSep [listToLL (map strToLL xs), jeToLL ebody] ++ ")"
+    JLambda f xs ebody ->
+        "JLambda(" ++ commaSep [strToLL f, listToLL (map strToLL xs), jeToLL ebody] ++ ")"
 
 commaSep :: [String] -> String
 commaSep  = intercalate ", "

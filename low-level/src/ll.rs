@@ -34,11 +34,11 @@ pub enum JValue {
     JEq,
     JGt,
     JGtEq,
-    JLambda(List<JVarRef>, JExpr),
+    JLambda(JVarRef, List<JVarRef>, JExpr),
 
     // Closure type used in the CEK1 machine
     // This should never be used anywhere outside of Cek::step
-    JClosure(List<JVarRef>, JExpr, Env),
+    JClosure(JVarRef, List<JVarRef>, JExpr, Env),
 }
 
 // Convenience function to make constructing JExpr::JIf cleaner
