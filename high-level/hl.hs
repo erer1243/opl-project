@@ -74,10 +74,12 @@ desugar (SEList l) = case l of
     -- conditional
     [SESym "if", ec, et, ef] -> JIf (desugar ec) (desugar et) (desugar ef)
     -- lambda
-    [SESym "lambda", SEList xs, ebody] -> JVal $ JLambda (map unwrapSESym xs) (desugar ebody)
+    [SESym "lambda", SEList xs, ebody] -> JVal $ JLambda "rec" (map unwrapSESym xs) (desugar ebody)
+    [SESym "lambda", SESym f, SEList xs, ebody] -> JVal $ JLambda f (map unwrapSESym xs)
+                                                                    (desugar ebody)
     -- let form
     [SESym "let", SEList binds, ebody] -> let (xs, es) = desugarLetPairs binds
-                                          in JApply (JVal $ JLambda xs (desugar ebody)) es
+                                          in JApply (JVal $ JLambda "rec" xs (desugar ebody)) es
     -- let* form base case
     [SESym "let*", SEList [], ebody] -> desugar ebody
     -- let* form recursive case
