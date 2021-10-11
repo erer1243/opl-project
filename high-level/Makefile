@@ -1,4 +1,4 @@
-.PHONY: repl clean
+.PHONY: repl clean test
 
 hl: hl.hs
 	ghc hl.hs
@@ -8,3 +8,6 @@ repl:
 
 clean:
 	rm -f hl.hi hl.o hl
+
+test: hl
+	./hl
