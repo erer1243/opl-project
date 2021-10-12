@@ -146,7 +146,7 @@ tests = [
         , (["let*", ["x", 5, "x", 10], "x"], JNum 10)
         , (["let", ["x", 10, "f", ["lambda", ["x"], "x"]], ["+", "x", ["f", 5]]], JNum 15)
 
-        -- Testing of closing over variables
+        -- Testing of closing over variables !!!!TODO!!!!!
         , (["let", ["curriedMult", ["lambda", ["x"], ["lambda", ["y"], ["*", "x", "y"]]]],
                    ["let",  ["mult5", ["curriedMult", 5],
                              "mult10", ["curriedMult", 10]],

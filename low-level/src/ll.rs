@@ -1,6 +1,7 @@
 mod util;
 
 use derive_more::{Deref, IsVariant, Unwrap};
+use std::cell::Cell;
 pub use util::*;
 
 // JExpr pointer wrapper type
@@ -135,7 +136,13 @@ impl Cek {
             (JApply(e0, em), _) => Cek(e0, env, kapp([].into(), env, em, orig_k)),
 
             // Lambda to closure (rule 1) from 6-11
-            (JVal(JLambda(xs, ebody)), _k) => Cek(jval(JClosure(xs, ebody, env)), env, orig_k),
+            // Updated to support closures with recurse name, 8-2,8-3
+            (JVal(JLambda(f, xs, ebody)), _k) => {
+                let mut envp = env.cons((f, JValue::JNum(0)));
+                let clos = JClosure(f, xs, ebody, envp);
+                envp.update((f, clos));
+                Cek(jval(clos), env, orig_k)
+            }
 
             // Rule 6 from 6-6
             // Apply where some parameters need to be evaluated
@@ -152,7 +159,7 @@ impl Cek {
             (JVal(vn), KApp(v, _envp, _e, k)) => {
                 let v = cons(vn, v);
 
-                if let JClosure(xs, ebody, envp) = v.last() {
+                if let JClosure(_f, xs, ebody, envp) = v.last() {
                     // Closure eval (rule 2) from 6-11
                     // apply where we are applying to a closure
                     let env = Env::from_func_apply(envp, xs, v);
@@ -195,13 +202,25 @@ fn run_delta(list: List<JValue>) -> JExpr {
 }
 
 #[derive(Copy, Clone, Deref, Debug, Eq, PartialEq)]
-pub struct Env(List<(JVarRef, JValue)>);
+pub struct Env(List<(JVarRef, Cell<JValue>)>);
 
 impl Env {
     pub const EMPTY: Env = Env(List::new());
 
-    pub fn cons(self, var: (JVarRef, JValue)) -> Env {
-        Env(cons(var, *self))
+    pub fn cons(self, (name, val): (JVarRef, JValue)) -> Env {
+        Env(cons((name, Cell::new(val)), *self))
+    }
+
+    pub fn update(&mut self, (name, val): (JVarRef, JValue)) {
+        let mut curr = **self;
+
+        while let Some(((x, v), next)) = curr.head_tail() {
+            if *x == name {
+                v.set(val);
+                break;
+            }
+            curr = next;
+        }
     }
 
     pub fn get(self, var_ref: JVarRef) -> JValue {
@@ -209,7 +228,7 @@ impl Env {
 
         while let Some(((x, v), next)) = curr.head_tail() {
             if *x == var_ref {
-                return *v;
+                return v.get();
             }
             curr = next;
         }
