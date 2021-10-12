@@ -83,9 +83,14 @@ desugar (SEList l) = case l of
     -- let* form base case
     [SESym "let*", SEList [], ebody] -> desugar ebody
     -- let* form recursive case
-    [SESym "let*", SEList (x:e:binds), ebody] -> desugar ["let", [x, e],
-                                                                 ["let*", SEList binds, ebody]]
-    -- apply
+    [SESym "let*", SEList (x:e:binds), ebody] ->
+        desugar ["let", [x, e], ["let*", SEList binds, ebody]]
+    -- do-times macro
+    [SESym "do-times", x@(SESym _), ec, ans@(SESym _), ed, eb] ->
+        desugar ["let", ["last", ec], [[λ, [x, ans], ["if", ["<", x, "last"],
+                                                         ["rec", ["+", x, 1], eb], ans]],
+                                        0, ed]]
+    -- general apply
     (sym:tail) -> JApply (desugar sym) (map desugar tail)
     -- Error case
     l -> error $ "bad SEList " ++ show l
@@ -160,6 +165,33 @@ tests = [
         , (task35Test ["numToJ3", ["factorial", ["add1", ["add1", ["add1", "one"]]]]], JNum 24)
         , (task35Test ["numToJ3", ["factorial", ["add1", ["add1", ["add1", ["add1", "one"]]]]]], JNum 120)
         , (task35Test ["numToJ3", ["factorial", ["add1", ["add1", ["add1", ["add1", ["add1", "one"]]]]]]], JNum 720)
+
+        -- J4 tests
+        , ([[λ, ["n"], ["if", ["=", "n", 0], 1, ["*", "n", ["rec", ["-", "n", 1]]]]], 6], JNum 720) -- 6!
+        , (["let", ["useless-recurse", [λ, ["n"], ["if", ["=", "n", 0], 123, ["rec", ["-", "n", 1]]]]],
+              ["useless-recurse", 100000]], JNum 123) -- Recurse 100000 times to show it works
+        , (["let", ["sumN", [λ, ["n"], ["if", ["=", "n", 0], 0, ["+", "n", ["rec", ["-", "n", 1]]]]]],
+              ["sumN", 5]], JNum 15) -- 0+1+2+3+4+5
+        , (["let", ["fac", [λ, "fac", ["n"], ["if", ["=", "n", 0], 1, ["*", "n", ["fac", ["-", "n", 1]]]]]],
+              ["fac", 5]], JNum 120) -- 5! using basic recursion
+        , (["nat-unfold", "+", 0, 5], JNum 15) -- 5+4+3+2+1+0
+        , (["nat-unfold", "-", 0, 5], JNum 3) -- 5-(4-(3-(2-(1-0))))
+        , (["nat-unfold", "*", 1, 5], JNum 120) -- 5! using nat-unfold
+        , (["nat-unfold", [λ, ["_", "n"], ["+", "n", 1]], 0, 5], JNum 5) -- 1+1+1+1+1+0
+        , (["do-times", "i", 5, "sum", 0, ["+", "i", "sum"]], JNum 10) -- 0+1+2+3+4
+        , (["let", ["fac", [λ, ["n"], ["nat-unfold", "*", 1, "n"]]],
+               ["do-times", "i", 5, "sum", 0, ["+", ["fac", "i"], "sum"]]], JNum 34) -- 0!+1!+2!+3!+4!
+        , (["let", ["fac", [λ, ["n"],
+                       ["do-times", "i", ["+", "n", 1], "sum", 1,
+                           ["*", "sum", ["if", ["=", "i", 0], 1, "i"]]]]],
+               ["fac", 5]], JNum 120) -- 5! using do-times
+        , (["let*", ["pow2", [λ, ["n"], ["do-times", "i", "n", "m", 1, ["*", 2, "m"]]],
+                     "fill-bits", [λ, ["n"], ["do-times", "i", ["+", "n", 1], "sum", 0,
+                                                 ["+", "sum", ["pow2", "i"]]]],
+                     "and", [λ, ["b1", "b2"], ["if", "b1", "b2", "false"]]],
+            ["and", ["=", ["fill-bits", 5], 63],
+                ["and", ["=", ["fill-bits", 6], 127],
+                        ["=", ["fill-bits", 7], 255]]]], JBool True) -- fill-bits 5 = 0b11111, etc
         ]
 
 -- Convenience alias to make lambda code shorter
@@ -209,9 +241,6 @@ task35Test ebody =
              ebody
     ]
 
-runTests :: IO ()
-runTests = forM_ tests runTestInLL
-
 -- Converts a single JExpr to low level rust code.
 jeToLL :: JExpr -> String
 jeToLL (JVal v) = "jval(" ++ jvToLL v ++ ")"
@@ -249,7 +278,7 @@ strToLL s = "\"" ++ s ++ "\""
 runTestInLL :: (SExpr, JValue) -> IO ()
 runTestInLL (se, ans) = do
     -- Convert to source code
-    let je = desugar se
+    let je = desugar $ addStdlibToSE se
     let jeLL = jeToLL je
     let ansLL = jvToLL ans
 
@@ -268,19 +297,30 @@ runTestInLL (se, ans) = do
                 , "let ans =" ++ ansLL ++ ";"
                 , "let val = Cek::evaluate(expr);"
                 , "println!(\"answer={:?}\", val);"
-                , "if val != ans { panic!(\"!!! Test Failure !!!\"); }"
+                , "if val == ans {"
+                , "println!(\"{}\", ansi_term::Colour::Green.paint(\"Success\"));"
+                , "} else {"
+                , "panic!(\"{}\", ansi_term::Colour::Red.paint(\"!!! Test Failure !!!\"));"
+                , "}"
                 , "}"
                 ]
 
     -- Run the test program
     runCommand "cargo run --quiet --manifest-path=../low-level/Cargo.toml"
 
--- Run a command and ignore exit code. We expect some tests to fail and exit failure
+-- Add standard library functions to some code
+addStdlibToSE :: SExpr -> SExpr
+addStdlibToSE se = ["let", ["nat-unfold", natUnfold], se]
+  where
+    natUnfold = ["lambda", "nat-unfold", ["f", "z", "n"],
+                    ["if", ["=", "n", 0], "z", ["f", "n", ["nat-unfold", "f", "z", ["-", "n", 1]]]]]
+
+-- Run a command and ignore exit code. This allows tests to continue if one fails
 runCommand :: String -> IO ()
 runCommand s = spawnCommand s >>= waitForProcess >> return ()
 
 main :: IO ()
-main = runTests
+main = forM_ tests runTestInLL
 
 -- Enable conversion from number literals into SENum
 -- Only fromInteger and negate are needed so the rest is left undefined
