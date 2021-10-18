@@ -10,4 +10,5 @@ clean:
 	rm -f hl.hi hl.o hl
 
 test: hl
+	../low-level/target_ramdisk.sh
 	./hl
