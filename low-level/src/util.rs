@@ -4,7 +4,7 @@ use std::iter::FromIterator;
 use std::ops::Deref;
 
 // A "smart" pointer that leaks the memory of whatever it allocates
-pub struct Leak<T>(*const T);
+pub struct Leak<T>(*mut T);
 
 impl<T> Leak<T> {
     pub fn new(data: T) -> Self {
