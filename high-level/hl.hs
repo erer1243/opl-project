@@ -9,30 +9,29 @@ import Data.List (intercalate)
 import System.Process (spawnCommand, waitForProcess)
 import Control.Monad (forM_)
 
--- e ::= v | (e e...) | (if e e e) | x
+-- Types from page 9-2
+-- (obj [x: e]), (obj [x: v]), (ref e x) are implemented using desugaring and
+-- standard library functions that exist from the first half of lecture 9
+-- The only exceptions is that JField and JStrEq are implemented in the actual
+-- language.
 data JExpr = JVal JValue
            | JApply JExpr [JExpr]
            | JIf JExpr JExpr JExpr
            | JVarRef JVarRef
+           | JCase JExpr (JVarRef, JExpr) (JVarRef, JExpr)
            deriving (Show, Eq)
 
--- v ::= number | boolean | prim | lambda x (x...) e
 data JValue = JNum Integer
             | JBool Bool
-            | JPlus | JMinus | JMult | JDiv | JLtEq | JLt | JEq | JGt | JGtEq
             | JLambda JVarRef [JVarRef] JExpr
+            | JPlus | JMinus | JMult | JDiv | JLtEq | JLt | JEq | JGt | JGtEq
+            | JUnit | JPair JValue JValue | JInl JValue | JInr JValue
+            | JInlOp | JInrOp | JPairOp | JFst | JSnd
+            | JField JVarRef | JStrEq
             deriving (Show, Eq)
 
--- E ::= [] | (if E e e) | (v.. E e..)
-data Context = CHole
-             | CIf Context JExpr JExpr
-             | CApp [JValue] Context [JExpr]
-             deriving (Show, Eq)
-
--- x ::= some set of variables
 type JVarRef = String
 
--- se ::= empty | (cons se se) | string
 -- I decided to implement SExpr this way because it allows me
 -- to take advantage of list, string, and number literal overloading in ghc
 -- to write SExprs like ["+", 1, 2]
@@ -51,12 +50,25 @@ pp (JVal val) = case val of
     JGt -> ">"
     JLtEq -> "<="
     JGtEq -> ">="
+    JInlOp -> "inl"
+    JInrOp -> "inr"
+    JPairOp -> "pair"
+    JFst -> "fst"
+    JSnd -> "snd"
+    JUnit -> "unit"
+    JInl v -> "(inl " ++ pp (JVal v) ++ ")"
+    JInr v -> "(inr " ++ pp (JVal v) ++ ")"
+    JPair vl vr -> "(pair " ++ pp (JVal vl) ++ " " ++ pp (JVal vr) ++ ")"
+    JField s -> s
+    JStrEq -> "string=?"
     JLambda f xs ebody -> "(λ " ++ f ++ " (" ++ unwords (map (pp . JVarRef) xs) ++ ") " ++ pp ebody
                             ++ ")"
 pp (JIf cond e1 e2) = "(if " ++ pp cond ++ " " ++ pp e1 ++ " " ++ pp e2 ++ ")"
-pp (JApply head args) = let ppArgs = if null args then "" else " " ++ unwords (map pp args)
-                        in "(" ++ pp head ++ ppArgs ++ ")"
+pp (JApply e0 en) = let ppEn = if null en then "" else " " ++ unwords (map pp en)
+                    in "(" ++ pp e0 ++ ppEn ++ ")"
 pp (JVarRef s) = s
+pp (JCase e (xl, el) (xr, er)) = "(case " ++ pp e ++ " (inl " ++ xl ++ " => " ++ pp el ++ ")"
+                                                  ++ " (inr " ++ xr ++ " => " ++ pp er ++ "))"
 
 desugar :: SExpr -> JExpr
 desugar (SENum n) = JVal $ JNum n
@@ -65,10 +77,10 @@ desugar (SEList l) = case l of
     [SESym "+"] -> JVal $ JNum 0
     [SESym "*"] -> JVal $ JNum 1
     -- +/* recursive cases
-    (plus@(SESym "+"):head:tail) -> JApply (JVal JPlus) [desugar head,
-                                                         desugar $ SEList $ plus : tail]
-    (mult@(SESym "*"):head:tail) -> JApply (JVal JMult) [desugar head,
-                                                         desugar $ SEList $ mult : tail]
+    (plus@(SESym "+"):n:rest) -> JApply (JVal JPlus) [desugar n,
+                                                      desugar $ SEList $ plus : rest]
+    (mult@(SESym "*"):n:rest) -> JApply (JVal JMult) [desugar n,
+                                                      desugar $ SEList $ mult : rest]
     -- negation
     [SESym "-", e] -> JApply (JVal JMult) [JVal (JNum (-1)), desugar e]
     -- conditional
@@ -90,10 +102,21 @@ desugar (SEList l) = case l of
         desugar ["let", ["last", ec], [[λ, [x, ans], ["if", ["<", x, "last"],
                                                          ["rec", ["+", x, 1], eb], ans]],
                                         0, ed]]
+    -- case
+    [SESym "case", e, SEList [SESym xl, el], SEList [SESym xr, er]] ->
+        JCase (desugar e) (xl, desugar el) (xr, desugar er)
+    -- obj creation base case
+    [SESym "obj", SEList []] -> desugar "obj-empty"
+    -- obj creation recursive case
+    [SESym "obj", SEList ((SESym x):e:binds)] ->
+        let tailObj = desugar ["obj", SEList binds]
+        in JApply (desugar "obj-set") [tailObj, JVal (JField x), desugar e]
+    -- obj field access / dot syntax
+    [SESym "ref", e, SESym x] -> JApply (desugar "obj-lookup") [desugar e, JVal (JField x)]
     -- general apply
-    (sym:tail) -> JApply (desugar sym) (map desugar tail)
+    (sym:args) -> JApply (desugar sym) (map desugar args)
     -- Error case
-    l -> error $ "bad SEList " ++ show l
+    _ -> error $ "bad SEList " ++ show l
 desugar (SESym s) = case s of
     -- Builtins
     "+" -> JVal JPlus
@@ -107,7 +130,15 @@ desugar (SESym s) = case s of
     ">=" -> JVal JGtEq
     "true" -> JVal $ JBool True
     "false" -> JVal $ JBool False
-    s -> JVarRef s
+    "inl" -> JVal JInlOp
+    "inr" -> JVal JInrOp
+    "pair" -> JVal JPairOp
+    "unit" -> JVal JUnit
+    "fst" -> JVal JFst
+    "snd" -> JVal JSnd
+    "string=?" -> JVal JStrEq
+    -- Anything else -> var ref
+    _ -> JVarRef s
 
 -- Helper for desugaring let expressions
 desugarLetPairs :: [SExpr] -> ([JVarRef], [JExpr])
@@ -209,10 +240,10 @@ task35Test ebody =
               "false_", [λ, ["t"], [λ, ["f"], "f"]],
               "if_", [λ, ["c"], "c"],
               -- Pairs
-              "pair", [λ, ["l"], [λ, ["r"], [λ, ["s"],
+              "pair_", [λ, ["l"], [λ, ["r"], [λ, ["s"],
                         [["s", "l"], "r"] ]]],
-              "fst", [λ, ["p"], ["p", "true_"]],
-              "snd", [λ, ["p"], ["p", "false_"]],
+              "fst_", [λ, ["p"], ["p", "true_"]],
+              "snd_", [λ, ["p"], ["p", "false_"]],
               -- Numbers and numeric operations
               "zero", [λ, ["f"], [λ, ["x"], "x"]],
               "one", [λ, ["f"], [λ, ["x"], ["f", "x"]]],
@@ -223,8 +254,8 @@ task35Test ebody =
                         [["n", ["m", "f"]], "x"] ]]]],
               "add1", [λ, ["n"], [["add", "n"], "one"] ],
               "sub1", [λ, ["n"],
-                        ["fst", [["n", [λ, ["p"], [["pair", ["snd", "p"]], ["add1", ["snd", "p"]]]]],
-                                       [["pair", "zero"], "zero"]]]],
+                        ["fst_", [["n", [λ, ["p"], [["pair_", ["snd_", "p"]], ["add1", ["snd_", "p"]]]]],
+                                       [["pair_", "zero"], "zero"]]]],
               -- Z combinator
               "Z", [λ, ["f"], [[λ, ["x"], ["f", [λ, ["v"], [["x", "x"], "v"]]]],
                                [λ, ["x"], ["f", [λ, ["v"], [["x", "x"], "v"]]]]] ],
@@ -247,6 +278,9 @@ jeToLL (JVal v) = "jval(" ++ jvToLL v ++ ")"
 jeToLL (JIf ec et ef) = "jif(" ++ commaSep (map jeToLL [ec, et, ef]) ++ ")"
 jeToLL (JApply p args) = "japply(" ++ jeToLL p ++ "," ++ listToLL (map jeToLL args) ++ ")"
 jeToLL (JVarRef s) = "jvarref(" ++ strToLL s ++ ")"
+jeToLL (JCase e (xl, el) (xr, er)) = "jcase(" ++ jeToLL e
+                                              ++ ", (" ++ commaSep [strToLL xl, jeToLL el] ++ ")"
+                                              ++ ", (" ++ commaSep [strToLL xr, jeToLL er] ++ "))"
 
 -- Converts a single JValue to low level rust code.
 jvToLL :: JValue -> String
@@ -264,6 +298,17 @@ jvToLL v = "JValue::" ++ case v of
     JGtEq -> "JGtEq"
     JLambda f xs ebody ->
         "JLambda(" ++ commaSep [strToLL f, listToLL (map strToLL xs), jeToLL ebody] ++ ")"
+    JUnit -> "JUnit"
+    JInrOp -> "JInrOp"
+    JInlOp -> "JInlOp"
+    JPairOp -> "JPairOp"
+    JFst -> "JFst"
+    JSnd -> "JSnd"
+    JInl v -> "JInl(" ++ leakWrap (jvToLL v) ++ ")"
+    JInr v -> "JInr(" ++ leakWrap (jvToLL v) ++ ")"
+    JPair l r -> "JPair(" ++ commaSep (map (leakWrap . jvToLL) [l, r]) ++ ")"
+    JField s -> "JField(" ++ strToLL s ++ ")"
+    JStrEq -> "JStrEq"
 
 commaSep :: [String] -> String
 commaSep  = intercalate ", "
@@ -273,6 +318,9 @@ listToLL strs = "List::from([" ++ commaSep strs ++ "])"
 
 strToLL :: String -> String
 strToLL s = "\"" ++ s ++ "\""
+
+leakWrap :: String -> String
+leakWrap s = "Leak::new(" ++ s ++ ")"
 
 -- Takes a test and runs it in ll code, printing the result and if it failed
 runTestInLL :: (SExpr, JValue) -> IO ()
@@ -284,11 +332,10 @@ runTestInLL (se, ans) = do
 
     -- Print message
     putStrLn "========================="
-    --putStrLn $ "test=" ++ show se
-    putStrLn $ "expr=" ++ pp je
+    putStrLn $ "expr=" ++ pp (desugar se) -- Exclude standard library from test print
     putStrLn $ "expecting=" ++ show ans
 
-    -- Write the source to the hlgen file
+    -- Write the source to the generated code file
     writeFile "../low-level/src/hlgen.rs" $
         unlines [ "#[allow(unused_imports)]"
                 , "use ll::*;"
