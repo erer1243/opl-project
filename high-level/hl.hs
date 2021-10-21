@@ -220,9 +220,33 @@ tests = [
                      "fill-bits", [λ, ["n"], ["do-times", "i", "n", "sum", 0,
                                                  ["+", "sum", ["pow2", "i"]]]],
                      "and", [λ, ["b1", "b2"], ["if", "b1", "b2", "false"]]],
-            ["and", ["=", ["fill-bits", 6], 63], -- 0b111111 = 63
+            ["and", ["=", ["fill-bits", 6], 63], -- fill-bits 6 = 0b111111 = 63
                 ["and", ["=", ["fill-bits", 7], 127], -- 0b1111111 = 127
-                        ["=", ["fill-bits", 8], 255]]]], JBool True) -- 0b1111111 = 255
+                        ["=", ["fill-bits", 8], 255]]]], JBool True) -- 0b11111111 = 256
+
+        -- J5 raw extension tests
+        , ("unit", JUnit)
+        , (["inr", 5], JInr (JNum 5))
+        , (["pair", ["inl", ["pair", ">", "<"]], "false"], JPair (JInl (JPair JGt JLt)) (JBool False))
+        , (["case", ["inl", "unit"], ["_", "<"], ["_", ">"]], JLt)
+        , (["case", ["inl", 5], ["l", ["+", "l", 10]], ["r", "false"]], JNum 15)
+        , (["fst", ["pair", 5, "true"]], JNum 5)
+        , (["snd", ["pair", 5, "true"]], JBool True)
+        , (["let", ["numToUnary", [λ, ["n"], ["if", ["=", "n", 0],
+                                                    ["inl", "unit"],
+                                                    ["inr", ["rec", ["-", "n", 1]]]]],
+                    "unaryToNum", [λ, ["u"], ["case", "u", ["l", 0], ["r", ["+", 1, ["rec", "r"]]]]]],
+
+                   ["unaryToNum", ["numToUnary", 100]]], JNum 100)
+        , (["ref", ["obj", ["a", 5, "b", 10]], "b"], JNum 10)
+        , (["let", ["o", ["obj", ["a", ["*", 1, 2, 3],
+                                  "b", ["pair", "false", 10]]]],
+                   ["+", ["ref", "o", "a"], ["snd", ["ref", "o", "b"]]]], JNum 16)
+        , (["let*", ["a", ["obj", ["sub", "-"]],
+                     "b", ["obj", ["nested-a", "a"]],
+                     "c", ["obj", ["nested-b", "b", "x", 10, "y", 4]],
+                     "op", ["ref", ["ref", ["ref", "c", "nested-b"], "nested-a"], "sub"]],
+                    ["op", ["ref", "c", "x"], ["ref", "c", "y"]]], JNum 6)
         ]
 
 -- Convenience alias to make lambda code shorter
