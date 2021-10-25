@@ -9,19 +9,18 @@ pub use util::*;
 #[deref(forward)]
 pub struct JExpr(Leak<JExprBody>);
 
-// e ::= v | (e e..) | (if e e e) | x
+// Types from page 9-2
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Unwrap, IsVariant)]
 pub enum JExprBody {
     JVal(JValue),
     JIf(JExpr, JExpr, JExpr),
     JApply(JExpr, List<JExpr>),
     JVarRef(JVarRef),
+    JCase(JExpr, (JVarRef, JExpr), (JVarRef, JExpr)),
 }
 
-// x ::= some set of variable names
 type JVarRef = &'static str;
 
-// v ::= number | boolean | prim | lambda (x...) e
 #[derive(Copy, Clone, Debug, PartialEq, Eq, IsVariant, Unwrap)]
 pub enum JValue {
     JNum(i32),
@@ -36,32 +35,45 @@ pub enum JValue {
     JGt,
     JGtEq,
     JLambda(JVarRef, List<JVarRef>, JExpr),
+    JUnit,
+    JPair(Leak<JValue>, Leak<JValue>),
+    JInl(Leak<JValue>),
+    JInr(Leak<JValue>),
+    JPairOp,
+    JInlOp,
+    JInrOp,
+    JFst,
+    JSnd,
+    JField(JVarRef),
+    JStrEq,
 
-    // Closure type used in the CEK1 machine
+    // Closure type used in the CEK machine
     // This should never be used anywhere outside of Cek::step
     JClosure(JVarRef, List<JVarRef>, JExpr, Env),
 }
 
-// Convenience function to make constructing JExpr::JIf cleaner
+// JExpr constructor functions
 pub fn jif(ec: JExpr, et: JExpr, ef: JExpr) -> JExpr {
     JExpr(Leak::new(JExprBody::JIf(ec, et, ef)))
 }
 
-// Convenience function to make constructing JExpr::JApply cleaner
 pub fn japply(e0: JExpr, em: List<JExpr>) -> JExpr {
     JExpr(Leak::new(JExprBody::JApply(e0, em)))
 }
 
-// Convenience function to make constructing JExpr::JVal cleaner
 pub fn jval(v: JValue) -> JExpr {
     JExpr(Leak::new(JExprBody::JVal(v)))
 }
 
-// Convenience function to make constructing JExpr::JVarRef cleaner
 pub fn jvarref(vr: JVarRef) -> JExpr {
     JExpr(Leak::new(JExprBody::JVarRef(vr)))
 }
 
+pub fn jcase(e: JExpr, inl: (JVarRef, JExpr), inr: (JVarRef, JExpr)) -> JExpr {
+    JExpr(Leak::new(JExprBody::JCase(e, inl, inr)))
+}
+
+// Continuation pointer wrapper type
 #[derive(Copy, Clone, Deref, Debug)]
 #[deref(forward)]
 pub struct Cont(Leak<ContBody>);
@@ -73,21 +85,24 @@ pub enum ContBody {
     KRet,
     KIf(Env, JExpr, JExpr, Cont),
     KApp(List<JValue>, Env, List<JExpr>, Cont),
+    KCase(Env, (JVarRef, JExpr), (JVarRef, JExpr), Cont),
 }
 
-// Convenience function to make constructing KRet cleaner
+// Cont constructor functions
 pub fn kret() -> Cont {
     Cont(Leak::new(ContBody::KRet))
 }
 
-// Convenience function to make constructing KIf cleaner
 pub fn kif(env: Env, et: JExpr, ef: JExpr, k: Cont) -> Cont {
     Cont(Leak::new(ContBody::KIf(env, et, ef, k)))
 }
 
-// Convenience function to make constructing KApp cleaner
 pub fn kapp(v: List<JValue>, env: Env, e: List<JExpr>, k: Cont) -> Cont {
     Cont(Leak::new(ContBody::KApp(v, env, e, k)))
+}
+
+pub fn kcase(env: Env, inl: (JVarRef, JExpr), inr: (JVarRef, JExpr), k: Cont) -> Cont {
+    Cont(Leak::new(ContBody::KCase(env, inl, inr, k)))
 }
 
 // Cek machine
@@ -106,7 +121,6 @@ impl Cek {
         ck.0.unwrap_j_val()
     }
 
-    #[allow(dead_code)]
     fn print_debug(&self) {
         println!("== {:?}", self.0);
         println!("== {:?}", self.1);
@@ -171,7 +185,17 @@ impl Cek {
                 }
             }
 
-            _ => unreachable!(),
+            // Case into kcase continuation, invented from 9-3
+            (JCase(e, inl, inr), _k) => Cek(e, env, kcase(env, inl, inr, orig_k)),
+
+            // Case branch rules, invented from 9-3
+            (JVal(JInl(v)), KCase(envp, (xl, el), _inr, k)) => Cek(el, envp.cons((xl, *v)), k),
+            (JVal(JInr(v)), KCase(envp, _inl, (xr, er), k)) => Cek(er, envp.cons((xr, *v)), k),
+
+            _ => {
+                self.print_debug();
+                panic!("CEK hit bottom case");
+            }
         }
     }
 }
@@ -195,6 +219,16 @@ fn run_delta(list: List<JValue>) -> JExpr {
         [JEq, JNum(a), JNum(b)] => JBool(a == b),
         [JGt, JNum(a), JNum(b)] => JBool(a > b),
         [JGtEq, JNum(a), JNum(b)] => JBool(a >= b),
+
+        [JInlOp, v] => JInl(Leak::new(v)),
+        [JInrOp, v] => JInr(Leak::new(v)),
+
+        [JPairOp, vl, vr] => JPair(Leak::new(vl), Leak::new(vr)),
+        [JFst, JPair(vl, _)] => *vl,
+        [JSnd, JPair(_, vr)] => *vr,
+
+        [JStrEq, JField(a), JField(b)] => JBool(a == b),
+
         _ => panic!("delta hit bottom case, {:?}", vec),
     };
 
@@ -246,7 +280,13 @@ impl Env {
         v.pop();
         v.reverse();
 
-        assert_eq!(x.len(), v.len(), "apply expected {} arg(s), got {}", x.len(), v.len());
+        assert_eq!(
+            x.len(),
+            v.len(),
+            "apply expected {} arg(s), got {}",
+            x.len(),
+            v.len()
+        );
 
         for (x, v) in x.iter().zip(v.iter()) {
             env = env.cons((*x, *v));
