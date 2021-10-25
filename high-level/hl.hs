@@ -247,7 +247,56 @@ tests = [
                      "c", ["obj", ["nested-b", "b", "x", 10, "y", 4]],
                      "op", ["ref", ["ref", ["ref", "c", "nested-b"], "nested-a"], "sub"]],
                     ["op", ["ref", "c", "x"], ["ref", "c", "y"]]], JNum 6)
+
+        -- J5 standard library tests
+        , ("empty", JInl JUnit)
+        , (["length", "empty"], JNum 0)
+        , (["length", listToSe [1..10]], JNum 10)
+        , (["map", [λ, ["n"], ["+", "n", 3]], listToSe [1..5]], listToJv [4..8])
+        , (["reduce", "*", 1, listToSe [2..5]], JNum (2 * 3 * 4 * 5))
+        , (["filter", [λ, ["n"], ["<", "n", 5]], listToSe ([1..10] ++ [10,9..1])],
+           listToJv ([1..4] ++ [4,3..1]))
+        , (["reduce", "+", 0,
+               ["filter", [λ, ["n"], ["<", "n", 40]],
+                   ["map", [λ, ["n"], ["*", "n", "n"]], listToSe [1..10]]]],
+           JNum (sum $ filter (< 40) $ map (^ 2) [1..10]) )
+        , (["append", "empty", "empty"], listToJv [])
+        , (["append", listToSe [1..3], listToSe [4..6]], listToJv [1..6])
+        , (["let", ["list-empty?", [λ, ["l"], ["case", "l", ["_", "true"], ["_", "false"]]]],
+               ["and", ["list-empty?", "empty"],
+                       ["not", ["list-empty?", listToSe [1]]]]], JBool True)
+        , (["let", ["zip", [λ, ["x", "y"], ["case", "x",
+                                               ["_", "empty"],
+                                               ["px", ["case", "y",
+                                                   ["_", "empty"],
+                                                   ["py", ["cons", ["pair", ["fst", "px"], ["fst", "py"]],
+                                                                   ["rec", ["snd", "px"], ["snd", "py"]]]]]]]]],
+                   ["zip", listToSe [1, 2], listToSe [4..10]]],
+           JInr (JPair (JPair (JNum 1) (JNum 4)) (JInr (JPair (JPair (JNum 2) (JNum 5)) (JInl JUnit)))))
+        , (["let*", ["head", [λ, ["l"], ["case", "l", ["_", "nothing"], ["p", ["just", ["fst", "p"]]]]],
+                     "tail", [λ, ["l"], ["case", "l", ["_", "nothing"], ["p", ["just", ["snd", "p"]]]]],
+                     "is-just?", [λ, ["o"], ["case", "o", ["_", "false"], ["_", "true"]]],
+                     "is-none?", [λ, ["o"], ["not", ["is-just?", "o"]]],
+                     "unwrap-just", [λ, ["j"], ["case", "j", ["_", "error"], ["e", "e"]]],
+
+                     "l", listToSe [5..10],
+                     "a", ["=", ["unwrap-just", ["head", "l"]], 5],
+                     "b", ["is-just?", ["tail", "l"]],
+                     "c", ["is-none?", ["head", "empty"]],
+                     "d", ["is-none?", ["tail", "empty"]]],
+
+                    ["reduce", "or", "true",
+                        ["cons", "a", ["cons", "b", ["cons", "c", ["cons", "d", "empty"]]]]]], JBool True)
         ]
+
+-- Convenience functions for j5 stdlib testing
+-- Converts a number list to the JValue representation
+listToJv :: [Integer] -> JValue
+listToJv = foldr (\n v -> JInr (JPair (JNum n) v)) (JInl JUnit)
+
+-- Converts a number list to the SExpr representation
+listToSe :: [Integer] -> SExpr
+listToSe = foldr (\n e -> ["cons", SENum n, e]) "empty"
 
 -- Convenience alias to make lambda code shorter
 λ :: SExpr
