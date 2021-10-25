@@ -14,8 +14,9 @@ make_ramdisk() {
   mkdir target
   sudo mount -t tmpfs opl-low-level-target target
 
+  touch "target/hlgen.rs"
   rm -f "src/hlgen.rs"
-  ln -s "$(mktemp --tmpdir="/tmp")" "src/hlgen.rs"
+  ln -s "../target/hlgen.rs" "src/hlgen.rs"
 }
 
 if [ ! -e "./target" ]; then

@@ -1,7 +1,7 @@
 .PHONY: repl clean test
 
 hl: hl.hs
-	ghc -Wall -Wno-name-shadowing hl.hs
+	ghc -Wall -Wno-type-defaults -Wno-name-shadowing hl.hs
 
 repl:
 	ghci -XOverloadedStrings -XOverloadedLists hl.hs
