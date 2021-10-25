@@ -253,6 +253,47 @@ tests = [
 λ :: SExpr
 λ = "lambda"
 
+-- Add standard library functions to some code
+addStdlibToSE :: SExpr -> SExpr
+addStdlibToSE se = ["let*", stdlib, se]
+  where
+    stdlib = [ "nat-unfold", [λ, "nat-unfold", ["f", "z", "n"],
+                                 ["if", ["=", "n", 0],
+                                     "z", ["f", "n", ["nat-unfold", "f", "z", ["-", "n", 1]]]]]
+             -- Standard library functions from lecture 9
+             , "empty", ["inl", "unit"]
+             , "cons", [λ, ["data", "rest"], ["inr", ["pair", "data", "rest"]]]
+             , "length", [λ, ["list"], ["case", "list", ["_", 0],
+                                                        ["p", ["+", 1, ["rec", ["snd", "p"]]]]]]
+             , "obj-empty", "empty"
+             , "obj-set", [λ, ["o", "x", "e"], ["cons", ["pair", "x", "e"], "o"]]
+             , "obj-lookup", [λ, ["o", "k"], ["case", "o", ["_", "obj-lookup failed"],
+                                                           ["r", ["if", ["string=?", "k", ["fst", ["fst", "r"]]],
+                                                                        ["snd", ["fst", "r"]],
+                                                                        ["rec", ["snd", "r"], "k"]]]]]
+             , "map", [λ, ["f", "l"], ["case", "l", ["_", "l"],
+                                                    ["p", ["cons", ["f", ["fst", "p"]],
+                                                                   ["rec", "f", ["snd", "p"]]]]]]
+             , "reduce", [λ, ["f", "z", "l"],
+                             ["case", "l", ["_", "z"],
+                                           ["p", ["rec", "f", ["f", "z", ["fst", "p"]], ["snd", "p"]]]]]
+             , "filter", [λ, ["pr", "l"],
+                             ["case", "l", ["_", "l"],
+                                           ["p", ["let", ["r'", ["rec", "pr", ["snd", "p"]]],
+                                                         ["if", ["pr", ["fst", "p"]],
+                                                                ["cons", ["fst", "p"], "r'"],
+                                                                "r'"]]]]]
+             , "append", [λ, ["x", "y"], ["case", "x", ["_", "y"],
+                                                       ["p", ["cons", ["fst", "p"],
+                                                                      ["rec", ["snd", "p"], "y"]]]]]
+             , "nothing", "empty"
+             , "just", "inr"
+             -- Other standard library functions I added
+             , "or", [λ, ["a", "b"], ["if", "a", "true", "b"]]
+             , "and", [λ, ["a", "b"], ["if", "a", "b", "false"]]
+             , "not", [λ, ["b"], ["if", "b", "false", "true"]]
+             ]
+
 -- Takes an sexpr and puts it into the task 35
 -- lambda calculus "standard library". For convenience of
 -- testing multiple parts of my task 35 code.
@@ -378,13 +419,6 @@ runTestInLL (se, ans) = do
 
     -- Run the test program
     runCommand "cargo run --quiet --manifest-path=../low-level/Cargo.toml"
-
--- Add standard library functions to some code
-addStdlibToSE :: SExpr -> SExpr
-addStdlibToSE se = ["let", ["nat-unfold", natUnfold], se]
-  where
-    natUnfold = ["lambda", "nat-unfold", ["f", "z", "n"],
-                    ["if", ["=", "n", 0], "z", ["f", "n", ["nat-unfold", "f", "z", ["-", "n", 1]]]]]
 
 -- Run a command and ignore exit code. This allows tests to continue if one fails
 runCommand :: String -> IO ()
