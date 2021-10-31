@@ -28,6 +28,7 @@ data JValue = JNum Integer
             | JUnit | JPair JValue JValue | JInl JValue | JInr JValue
             | JInlOp | JInrOp | JPairOp | JFst | JSnd
             | JField JVarRef | JStrEq
+            | JSigma JValue | JBox | JUnbox | JSetBox
             deriving (Show, Eq)
 
 type JVarRef = String
@@ -63,6 +64,10 @@ pp (JVal val) = case val of
     JStrEq -> "string=?"
     JLambda f xs ebody -> "(λ " ++ f ++ " (" ++ unwords (map (pp . JVarRef) xs) ++ ") " ++ pp ebody
                             ++ ")"
+    JSigma v -> "σ[" ++ pp (JVal v) ++ "]"
+    JBox -> "box"
+    JUnbox -> "unbox"
+    JSetBox -> "set-box!"
 pp (JIf cond e1 e2) = "(if " ++ pp cond ++ " " ++ pp e1 ++ " " ++ pp e2 ++ ")"
 pp (JApply e0 en) = let ppEn = if null en then "" else " " ++ unwords (map pp en)
                     in "(" ++ pp e0 ++ ppEn ++ ")"
@@ -113,6 +118,8 @@ desugar (SEList l) = case l of
         in JApply (desugar "obj-set") [tailObj, JVal (JField x), desugar e]
     -- obj field access / dot syntax
     [SESym "ref", e, SESym x] -> JApply (desugar "obj-lookup") [desugar e, JVal (JField x)]
+    -- Sequence / (e0; e1) form from 10-4
+    [SESym "seq", e0, e1] -> desugar ["let", ["_", e0], e1]
     -- general apply
     (sym:args) -> JApply (desugar sym) (map desugar args)
     -- Error case
@@ -137,6 +144,9 @@ desugar (SESym s) = case s of
     "fst" -> JVal JFst
     "snd" -> JVal JSnd
     "string=?" -> JVal JStrEq
+    "box" -> JVal JBox
+    "unbox" -> JVal JUnbox
+    "set-box!" -> JVal JSetBox
     -- Anything else -> var ref
     _ -> JVarRef s
 
@@ -287,6 +297,9 @@ tests = [
 
                     ["reduce", "or", "true",
                         ["cons", "a", ["cons", "b", ["cons", "c", ["cons", "d", "empty"]]]]]], JBool True)
+
+        -- J6 tests
+        -- , (["let", ["b", ["box", 5]], ["unbox", "b"]], JNum 5)
         ]
 
 -- Convenience functions for j5 stdlib testing
@@ -423,6 +436,10 @@ jvToLL v = "JValue::" ++ case v of
     JPair l r -> "JPair(" ++ commaSep (map (leakWrap . jvToLL) [l, r]) ++ ")"
     JField s -> "JField(" ++ strToLL s ++ ")"
     JStrEq -> "JStrEq"
+    JSigma v -> "JSigma(" ++ leakWrap (jvToLL v) ++ ")"
+    JBox -> "JBox"
+    JUnbox -> "JUnbox"
+    JSetBox -> "JSetBox"
 
 commaSep :: [String] -> String
 commaSep  = intercalate ", "
@@ -474,7 +491,8 @@ runCommand :: String -> IO ()
 runCommand s = spawnCommand s >>= waitForProcess >> return ()
 
 main :: IO ()
-main = forM_ tests runTestInLL
+main = forM_ (drop 60 tests) runTestInLL
+-- main = forM_ tests runTestInLL
 
 -- Enable conversion from number literals into SENum
 -- Only fromInteger and negate are needed so the rest is left undefined
