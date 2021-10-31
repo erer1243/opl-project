@@ -118,8 +118,28 @@ desugar (SEList l) = case l of
         in JApply (desugar "obj-set") [tailObj, JVal (JField x), desugar e]
     -- obj field access / dot syntax
     [SESym "ref", e, SESym x] -> JApply (desugar "obj-lookup") [desugar e, JVal (JField x)]
-    -- Sequence / (e0; e1) form from 10-4
+    -- sequence / (e0; e1)
     [SESym "seq", e0, e1] -> desugar ["let", ["_", e0], e1]
+    -- begin empty case
+    [SESym "begin"] -> desugar "JUnit"
+    -- begin single case
+    [SESym "begin", e] -> desugar e
+    -- begin recursive case
+    (begin@(SESym "begin"):e:es) -> desugar ["seq", e, SEList (begin:es)]
+    -- begin0 form
+    (SESym "begin0":e:es) -> desugar ["let", ["ans", e], SEList (("begin":es) ++ ["ans"])]
+    -- when form
+    (SESym "when":c:es) -> desugar ["if", c, ["begin", SEList es], "unit"]
+    -- unless form
+    (SESym "unless":c:es) -> desugar ["when", ["not", c], SEList es]
+    -- while form
+    (SESym "while":c:es) -> desugar [λ, [], ["when", c, SEList (es ++ [["rec"]])]]
+    -- for form
+    (SESym "for":(SEList [SESym x, init, limit, inc]):eb) ->
+        desugar ["let", ["xb", ["box", init]],
+                    ["while", ["<", ["unbox", "xb"], limit]],
+                        ["let", [SESym x, ["unbox", "xb"]], ["begin", SEList eb]],
+                        ["set-box!", "xb", ["+", ["unbox", "xb"], inc]]]
     -- general apply
     (sym:args) -> JApply (desugar sym) (map desugar args)
     -- Error case
