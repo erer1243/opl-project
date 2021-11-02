@@ -10,6 +10,10 @@ impl<T> Leak<T> {
     pub fn new(data: T) -> Self {
         Leak(Box::into_raw(Box::new(data)))
     }
+
+    pub fn set(&self, data: T) {
+        unsafe { *self.0 = data; }
+    }
 }
 
 impl<T> Clone for Leak<T> {

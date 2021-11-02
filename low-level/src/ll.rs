@@ -34,7 +34,9 @@ pub enum JValue {
     JEq,
     JGt,
     JGtEq,
+
     JLambda(JVarRef, List<JVarRef>, JExpr),
+
     JUnit,
     JPair(Leak<JValue>, Leak<JValue>),
     JInl(Leak<JValue>),
@@ -46,6 +48,11 @@ pub enum JValue {
     JSnd,
     JField(JVarRef),
     JStrEq,
+
+    JSigma(Leak<JValue>),
+    JBox,
+    JUnbox,
+    JSetBox,
 
     // Closure type used in the CEK machine
     // This should never be used anywhere outside of Cek::step
@@ -229,6 +236,13 @@ fn run_delta(list: List<JValue>) -> JExpr {
 
         [JStrEq, JField(a), JField(b)] => JBool(a == b),
 
+        [JBox, v] => JSigma(Leak::new(v)),
+        [JUnbox, JSigma(l)] => *l,
+        [JSetBox, JSigma(l), v] => {
+            l.set(v);
+            v
+        }
+
         _ => panic!("delta hit bottom case, {:?}", vec),
     };
 
@@ -283,9 +297,9 @@ impl Env {
         assert_eq!(
             x.len(),
             v.len(),
-            "apply expected {} arg(s), got {}",
-            x.len(),
-            v.len()
+            "apply expected args {:?} but got {:?}",
+            x,
+            v
         );
 
         for (x, v) in x.iter().zip(v.iter()) {
