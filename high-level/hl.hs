@@ -319,7 +319,56 @@ tests = [
                         ["cons", "a", ["cons", "b", ["cons", "c", ["cons", "d", "empty"]]]]]], JBool True)
 
         -- J6 tests
-        -- , (["let", ["b", ["box", 5]], ["unbox", "b"]], JNum 5)
+        , (["let", ["b", ["box", 5]], ["unbox", "b"]], JNum 5)
+        , (["let", ["b", ["box", 5]], ["begin", ["set-box!", "b", ["+", 5, ["unbox", "b"]]],
+                                                ["unbox", "b"]]], JNum 10)
+        , (["let*", ["bb", ["box", "unit"],
+                     "init", [λ, [], ["set-box!", "bb", ["box", "unit"]]],
+                     "get", [λ, [], ["unbox", ["unbox", "bb"]]],
+                     "set", [λ, ["v"], ["set-box!", ["unbox", "bb"], "v"]]],
+                    ["begin", ["init"],
+                              ["set", 5],
+                              ["+", ["get"],
+                                    ["begin", ["set", 10],
+                                              ["get"]]]]], JNum 15)
+        , (["begin"], JUnit)
+        , (["begin", 5], JNum 5)
+        , (["begin", 5, 6, 7], JNum 7)
+        , (["begin0", ["+", 5, 10], ["box", 5], ["let", ["x", ["box", 5]], ["unbox", "x"]]], JNum 15)
+        , (["let", ["a", ["box", 0], "b", ["box", 5]],
+               ["when", "true", ["set-box!", "a", 10],
+                                ["set-box!", "b", ["+", ["unbox", "a"], ["unbox", "b"]]],
+                                ["unbox", "b"]]], JNum 15)
+        , (["let", ["a", ["box", 0], "b", ["box", 5]],
+               ["unless", "true", ["set-box!", "a", 10],
+                                  ["set-box!", "b", ["+", ["unbox", "a"], ["unbox", "b"]]],
+                                  ["unbox", "b"]]], JUnit)
+        , (["let", ["pow-while", [λ, ["b", "e"],
+                                 ["let", ["x", ["box", 1],
+                                          "n", ["box", "e"]],
+                                         ["begin",
+                                             ["while", [">", ["unbox", "n"], 0],
+                                                 ["set-box!", "x", ["*", "b", ["unbox", "x"]]],
+                                                 ["set-box!", "n", ["-", ["unbox", "n"], 1]]],
+                                             ["unbox", "x"]]]]],
+                   ["and", ["=", ["pow-while", 2, 5], 32],
+                           ["=", ["pow-while", 5, 3], 125]]], JBool True)
+        , (["let", ["pow-for", [λ, ["b", "e"],
+                                   ["let", ["x", ["box", 1]],
+                                           ["begin",
+                                               ["for", ["_", 0, "e", 1],
+                                                   ["set-box!", "x", ["*", "b", ["unbox", "x"]]]],
+                                               ["unbox", "x"]]]]],
+                   ["and", ["=", ["pow-for", 2, 5], 32],
+                           ["=", ["pow-for", 5, 3], 125]]], JBool True)
+        , (["let", ["factorial-for", [λ, ["n"],
+                                         ["let", ["x", ["box", 1]],
+                                                 ["begin",
+                                                     ["for", ["i", 1, ["+", "n", 1], 1],
+                                                         ["set-box!", "x", ["*", "i", ["unbox", "x"]]]],
+                                                     ["unbox", "x"]]]]],
+                   ["and", ["=", 120, ["factorial-for", 5]],
+                           ["=", 3628800, ["factorial-for", 10]]]], JBool True)
         ]
 
 -- Convenience functions for j5 stdlib testing
