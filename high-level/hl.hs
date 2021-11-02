@@ -186,12 +186,12 @@ tests = [
                            ["*", "sum", ["if", ["=", "i", 0], 1, "i"]]]]],
                ["fac", 5]], JNum 120) -- 5! using do-times
         , (["let*", ["pow2", [λ, ["n"], ["do-times", "i", "n", "m", 1, ["*", 2, "m"]]],
-                     "fill-bits", [λ, ["n"], ["do-times", "i", ["+", "n", 1], "sum", 0,
+                     "fill-bits", [λ, ["n"], ["do-times", "i", "n", "sum", 0,
                                                  ["+", "sum", ["pow2", "i"]]]],
                      "and", [λ, ["b1", "b2"], ["if", "b1", "b2", "false"]]],
-            ["and", ["=", ["fill-bits", 5], 63],
-                ["and", ["=", ["fill-bits", 6], 127],
-                        ["=", ["fill-bits", 7], 255]]]], JBool True) -- fill-bits 5 = 0b11111, etc
+            ["and", ["=", ["fill-bits", 6], 63], -- 0b111111 = 63
+                ["and", ["=", ["fill-bits", 7], 127], -- 0b1111111 = 127
+                        ["=", ["fill-bits", 8], 255]]]], JBool True) -- 0b1111111 = 255
         ]
 
 -- Convenience alias to make lambda code shorter
