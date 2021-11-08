@@ -9,16 +9,12 @@ import Data.List (intercalate)
 import System.Process (spawnCommand, waitForProcess)
 import Control.Monad (forM_)
 
--- Types from page 9-2
--- (obj [x: e]), (obj [x: v]), (ref e x) are implemented using desugaring and
--- standard library functions that exist from the first half of lecture 9
--- The only exceptions is that JField and JStrEq are implemented in the actual
--- language.
 data JExpr = JVal JValue
            | JApply JExpr [JExpr]
            | JIf JExpr JExpr JExpr
            | JVarRef JVarRef
            | JCase JExpr (JVarRef, JExpr) (JVarRef, JExpr)
+           | JSet JVarRef JExpr
            deriving (Show, Eq)
 
 data JValue = JNum Integer
@@ -74,7 +70,13 @@ pp (JApply e0 en) = let ppEn = if null en then "" else " " ++ unwords (map pp en
 pp (JVarRef s) = s
 pp (JCase e (xl, el) (xr, er)) = "(case " ++ pp e ++ " (inl " ++ xl ++ " => " ++ pp el ++ ")"
                                                   ++ " (inr " ++ xr ++ " => " ++ pp er ++ "))"
+pp (JSet v e) = "(set! " ++ v ++ " " ++ pp e ++ ")"
 
+-- First do syntactic desugaring, then convert j7 to j6
+desugarTop :: SExpr -> JExpr
+desugarTop = j7toj6 . desugar
+
+-- Syntactic desugaring
 desugar :: SExpr -> JExpr
 desugar (SENum n) = JVal $ JNum n
 desugar (SEList l) = case l of
@@ -137,9 +139,11 @@ desugar (SEList l) = case l of
     -- for form
     (SESym "for":(SEList [SESym x, init, limit, inc]):eb) ->
         desugar ["let", ["xb", ["box", init]],
-                    ["while", ["<", ["unbox", "xb"], limit],
-                        ["let", [SESym x, ["unbox", "xb"]], SEList ("begin" : eb)],
-                        ["set-box!", "xb", ["+", ["unbox", "xb"], inc]]]]
+                       ["while", ["<", ["unbox", "xb"], limit],
+                           ["let", [SESym x, ["unbox", "xb"]], SEList ("begin" : eb)],
+                           ["set-box!", "xb", ["+", ["unbox", "xb"], inc]]]]
+    -- set! form
+    [SESym "set!", SESym x, e] -> JSet x (desugar e)
     -- general apply
     (sym:args) -> JApply (desugar sym) (map desugar args)
     -- Error case
@@ -171,16 +175,64 @@ desugar (SESym s) = case s of
     _ -> JVarRef s
 
 -- Helper for desugaring let expressions
-desugarLetPairs :: [SExpr] -> ([JVarRef], [JExpr])
-desugarLetPairs binds = helper binds [] []
+bindingPairs :: [SExpr] -> ([JVarRef], [SExpr])
+bindingPairs binds = helper binds [] []
   where
-    helper [] xs es = (map unwrapSESym xs, map desugar es)
+    helper [] xs es = (map unwrapSESym xs, es)
     helper (x:v:t) xs es = helper t (x:xs) (v:es)
-    helper _ _ _ = error $ "let has odd # of args to bindings: " ++ show binds
+    helper _ _ _ = error $ "bad bindings syntax: " ++ show binds
 
 unwrapSESym :: SExpr -> String
 unwrapSESym (SESym s) = s
 unwrapSESym se = error $ "unwrapSESym on " ++ show se
+
+-- Boxing of variables when necessary to remove set!
+j7toj6 :: JExpr -> JExpr
+j7toj6 = trans []
+  where
+    trans :: [JVarRef] -> JExpr -> JExpr
+    trans bv e =
+        let trans' = trans bv in
+        case e of
+            (JVal (JLambda f xs eb)) -> JVal $
+                let ms = modifiedSet eb
+                    bxs = filter (`elem` ms) xs
+                    nbxs = delete bxs xs
+                    ebTrans = trans (delete nbxs bv ++ bxs) eb
+                    ebVarWrap = JApply (JVal $ JLambda "varwrap" bxs ebTrans)
+                                   (map (\x -> JApply (JVal JBox) [JVarRef (x ++ "-init")]) bxs)
+                    xsVarWrap = map (\x -> if x `elem` bxs then x ++ "-init" else x) xs in
+                if null bxs
+                    then JLambda f xs ebTrans
+                    else JLambda f xsVarWrap ebVarWrap
+            v@(JVal _) -> v
+            (JIf ec et ef) -> JIf (trans' ec) (trans' et) (trans' ef)
+            (JApply p args) -> JApply (trans' p) (map trans' args)
+            (JVarRef x) -> if x `elem` bv
+                           then JApply (JVal JUnbox) [JVarRef x]
+                           else JVarRef x
+            (JCase e (xl, el) (xr, er)) -> JCase (trans' e)
+                                                 (xl, trans (delete [xl] bv) el)
+                                                 (xr, trans (delete [xr] bv) er)
+            (JSet b e) -> JApply (JVal JSetBox) [JVarRef b, trans' e]
+
+    modifiedSet :: JExpr -> [JVarRef]
+    modifiedSet (JSet x e)      = x : modifiedSet e
+    modifiedSet (JApply p args) = msHelper (p : args)
+    modifiedSet (JIf ec et ef)  = msHelper [ec, et, ef]
+    modifiedSet (JCase e (_, el) (_, er)) = msHelper [e, el, er]
+    modifiedSet (JVal (JLambda f xs eb))  = delete (f : xs) (modifiedSet eb)
+    modifiedSet (JVal _)    = []
+    modifiedSet (JVarRef _) = []
+
+    msHelper :: [JExpr] -> [JVarRef]
+    msHelper = foldr1 union . map modifiedSet
+
+    union :: [JVarRef] -> [JVarRef] -> [JVarRef]
+    union = foldr (\x s -> if x `elem` s then s else x : s)
+
+    delete :: [JVarRef] -> [JVarRef] -> [JVarRef]
+    delete d = foldr (\x s -> if x `elem` d then s else x : s) []
 
 -- [(program, expected_answer)]
 tests :: [(SExpr, JValue)]
@@ -520,6 +572,7 @@ jeToLL (JVarRef s) = "jvarref(" ++ strToLL s ++ ")"
 jeToLL (JCase e (xl, el) (xr, er)) = "jcase(" ++ jeToLL e
                                               ++ ", (" ++ commaSep [strToLL xl, jeToLL el] ++ ")"
                                               ++ ", (" ++ commaSep [strToLL xr, jeToLL er] ++ "))"
+jeToLL js@(JSet _ _) = error "JSet passed to jeToLL, this should never happen. " ++ pp js
 
 -- Converts a single JValue to low level rust code.
 jvToLL :: JValue -> String
@@ -569,13 +622,13 @@ leakWrap s = "Leak::new(" ++ s ++ ")"
 runTestInLL :: (SExpr, JValue) -> IO ()
 runTestInLL (se, ans) = do
     -- Convert to source code
-    let je = desugar $ addStdlibToSE se
+    let je = desugarTop $ addStdlibToSE se
     let jeLL = jeToLL je
     let ansLL = jvToLL ans
 
     -- Print message
     putStrLn "========================="
-    putStrLn $ "expr=" ++ pp (desugar se) -- Exclude standard library from test print
+    putStrLn $ "expr=" ++ pp (desugarTop se) -- Exclude standard library from test print
     putStrLn $ "expecting=" ++ show ans
 
     -- Write the source to the generated code file
@@ -603,8 +656,8 @@ runCommand :: String -> IO ()
 runCommand s = spawnCommand s >>= waitForProcess >> return ()
 
 main :: IO ()
-main = forM_ (drop 60 tests) runTestInLL
--- main = forM_ tests runTestInLL
+-- main = forM_ (drop 72 tests) runTestInLL
+main = forM_ tests runTestInLL
 
 -- Enable conversion from number literals into SENum
 -- Only fromInteger and negate are needed so the rest is left undefined
