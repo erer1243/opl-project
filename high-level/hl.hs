@@ -5,7 +5,7 @@
 import GHC.Exts (IsList(..))
 import Data.String (IsString(..))
 
-import Data.List (intercalate)
+import Data.List (intercalate, intersperse)
 import System.Process (spawnCommand, waitForProcess)
 import Control.Monad (forM_)
 
@@ -93,12 +93,13 @@ desugar (SEList l) = case l of
     -- conditional
     [SESym "if", ec, et, ef] -> JIf (desugar ec) (desugar et) (desugar ef)
     -- lambda
-    [SESym "lambda", SEList xs, ebody] -> JVal $ JLambda "rec" (map unwrapSESym xs) (desugar ebody)
     [SESym "lambda", SESym f, SEList xs, ebody] -> JVal $ JLambda f (map unwrapSESym xs)
                                                                     (desugar ebody)
+    -- lambda with default recursive name
+    [SESym "lambda", SEList xs, ebody] -> desugar ["lambda", "rec", SEList xs, ebody]
     -- let form
-    [SESym "let", SEList binds, ebody] -> let (xs, es) = desugarLetPairs binds
-                                          in JApply (JVal $ JLambda "rec" xs (desugar ebody)) es
+    [SESym "let", SEList binds, ebody] -> let (xs, es) = bindingPairs binds
+                                          in JApply (JVal $ JLambda "rec" xs (desugar ebody)) (map desugar es)
     -- let* form base case
     [SESym "let*", SEList [], ebody] -> desugar ebody
     -- let* form recursive case
@@ -107,8 +108,8 @@ desugar (SEList l) = case l of
     -- do-times macro
     [SESym "do-times", x@(SESym _), ec, ans@(SESym _), ed, eb] ->
         desugar ["let", ["last", ec], [[λ, [x, ans], ["if", ["<", x, "last"],
-                                                         ["rec", ["+", x, 1], eb], ans]],
-                                        0, ed]]
+                                                            ["rec", ["+", x, 1], eb], ans]],
+                                           0, ed]]
     -- case
     [SESym "case", e, SEList [SESym xl, el], SEList [SESym xr, er]] ->
         JCase (desugar e) (xl, desugar el) (xr, desugar er)
@@ -144,6 +145,12 @@ desugar (SEList l) = case l of
                            ["set-box!", "xb", ["+", ["unbox", "xb"], inc]]]]
     -- set! form
     [SESym "set!", SESym x, e] -> JSet x (desugar e)
+    -- letrec form
+    [SESym "letrec", SEList binds, ebody] ->
+        let (xs, es) = bindingPairs binds
+            letBinds = SEList $ map SESym $ intersperse "unit" xs ++ ["unit"]
+            setOps = "begin" : zipWith (\x e -> SEList ["set!", SESym x, e]) xs es
+        in desugar ["let", letBinds, SEList (setOps ++ [ebody])]
     -- general apply
     (sym:args) -> JApply (desugar sym) (map desugar args)
     -- Error case
