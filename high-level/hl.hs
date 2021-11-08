@@ -369,6 +369,49 @@ tests = [
                                                      ["unbox", "x"]]]]],
                    ["and", ["=", 120, ["factorial-for", 5]],
                            ["=", 3628800, ["factorial-for", 10]]]], JBool True)
+
+        -- J7 tests
+        , ([[λ, ["x"], ["set!", "x", 10]], 5], JNum 10)
+        , (["let", ["x", 5], ["set!", "x", "unit"]], JUnit)
+        , ([[λ, ["x"], ["begin", ["set!", "x", 10], "x"]], 5], JNum 10)
+        , ([[λ, ["x"], ["begin", ["set!", "x", ["+", 10, "x"]], "x"]], 5], JNum 15)
+        , (["let", ["inner-λ-mut", [λ, ["x"], [[λ, ["x"], ["set!", "x", 5]], "x"]]],
+                   ["inner-λ-mut", "unit"]], JNum 5)
+        , (["let", ["outer-λ-mut", [λ, ["x"], [[λ, ["x"], ["+", "x", 5]], ["set!", "x", 10]]]],
+                   ["outer-λ-mut", "unit"]], JNum 15)
+        , (["let*", ["x", "unit", "y", ["set!", "x", 5]],
+                    ["begin", ["set!", "y", 10],
+                              ["pair", "x", "y"]]], JPair (JNum 5) (JNum 10))
+        , (["let", ["x", "unit"],
+                   ["begin", ["set!", "x", ["inl", 5]],
+                             ["case", "x", ["x", ["+", "x", 2]],
+                                           ["_", "unit"]]]], JNum 7)
+        , (["let*", ["mutual-rec2", "unit",
+                     "mutual-rec1", [λ, ["x"], ["begin", ["set!", "x", ["-", "x", 1]],
+                                                         ["mutual-rec2", "x"]]],
+                     "mutual-rec2-real", [λ, ["x"], ["if", ["<", "x", 1000],
+                                                           ["begin", ["set!", "x", ["+", "x", 2]],
+                                                                     ["mutual-rec1", "x"]],
+                                                           "x"]]],
+                    ["begin", ["set!", "mutual-rec2", "mutual-rec2-real"],
+                              ["mutual-rec1", 1]]], JNum 1000)
+        -- Mutual recursion tests from j2
+        , (["letrec", ["recurse1", [λ, ["x"], ["recurse2", ["+", "x", 1]]],
+                       "recurse2", [λ, ["x"], ["if", [">", "x", 10000], "x", ["recurse1", "x"]]]],
+                      ["recurse1", 0]], JNum 10001)
+        , (["letrec", ["recurse1", [λ, ["x"], ["recurse2", ["+", "x", 2]]],
+                       "recurse2", [λ, ["x"], ["recurse3", ["-", "x", 1]]],
+                       "recurse3", [λ, ["x"], ["if", [">", "x", 10000], "x", ["recurse1", "x"]]]],
+                      ["recurse1", 0]], JNum 10001)
+        , (["letrec", ["collatz-highest", [λ, ["x", "h"], ["if", ["even?", "x"],
+                                                              ["eq1", ["/", "x", 2], "h"],
+                                                              ["eq1", ["+", 1, ["*", "x", 3]], "h"]]],
+                       "eq1", [λ, ["x", "h"], ["if", ["=", "x", 1], "h", ["new-highest", "x", "h"]]],
+                       "new-highest", [λ, ["x", "h"], ["if", [">", "x", "h"],
+                                                             ["collatz-highest", "x", "x"],
+                                                             ["collatz-highest", "x", "h"]]],
+                        "even?", [λ, ["x"], ["=", "x", ["*", 2, ["/", "x", 2]]]]],
+                      ["collatz-highest", 27, 0]], JNum 9232)
         ]
 
 -- Convenience functions for j5 stdlib testing
