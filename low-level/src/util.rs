@@ -12,7 +12,9 @@ impl<T> Leak<T> {
     }
 
     pub fn set(&self, data: T) {
-        unsafe { *self.0 = data; }
+        unsafe {
+            *self.0 = data;
+        }
     }
 }
 
