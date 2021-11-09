@@ -15,6 +15,7 @@ data JExpr = JVal JValue
            | JVarRef JVarRef
            | JCase JExpr (JVarRef, JExpr) (JVarRef, JExpr)
            | JSet JVarRef JExpr
+           | JAbort JExpr | JThrow JExpr | JTry JExpr JExpr
            deriving (Show, Eq)
 
 data JValue = JNum Integer
@@ -71,6 +72,9 @@ pp (JVarRef s) = s
 pp (JCase e (xl, el) (xr, er)) = "(case " ++ pp e ++ " (inl " ++ xl ++ " => " ++ pp el ++ ")"
                                                   ++ " (inr " ++ xr ++ " => " ++ pp er ++ "))"
 pp (JSet v e) = "(set! " ++ v ++ " " ++ pp e ++ ")"
+pp (JAbort e) = "(abort " ++ pp e ++ ")"
+pp (JThrow e) = "(throw " ++ pp e ++ ")"
+pp (JTry et ec) = "(try " ++ pp et ++ " catch " ++ pp ec ++ ")"
 
 -- First do syntactic desugaring, then convert j7 to j6
 desugarTop :: SExpr -> JExpr
@@ -151,6 +155,12 @@ desugar (SEList l) = case l of
             letBinds = SEList $ map SESym $ intersperse "unit" xs ++ ["unit"]
             setOps = "begin" : zipWith (\x e -> SEList ["set!", SESym x, e]) xs es
         in desugar ["let", letBinds, SEList (setOps ++ [ebody])]
+    -- abort form
+    [SESym "abort", e] -> JAbort $ desugar e
+    -- throw form
+    [SESym "throw", e] -> JThrow $ desugar e
+    -- try catch form
+    [SESym "try", et, SESym "catch", ec] -> JTry (desugar et) (desugar ec)
     -- general apply
     (sym:args) -> JApply (desugar sym) (map desugar args)
     -- Error case
@@ -222,6 +232,9 @@ j7toj6 = trans []
                                                  (xl, trans (delete [xl] bv) el)
                                                  (xr, trans (delete [xr] bv) er)
             (JSet b e) -> JApply (JVal JSetBox) [JVarRef b, trans' e]
+            (JAbort e) -> JAbort $ trans' e
+            (JThrow e) -> JThrow $ trans' e
+            (JTry et ec) -> JTry (trans' et) (trans' ec)
 
     modifiedSet :: JExpr -> [JVarRef]
     modifiedSet (JSet x e)      = x : modifiedSet e
@@ -231,6 +244,9 @@ j7toj6 = trans []
     modifiedSet (JVal (JLambda f xs eb))  = delete (f : xs) (modifiedSet eb)
     modifiedSet (JVal _)    = []
     modifiedSet (JVarRef _) = []
+    modifiedSet (JAbort _) = []
+    modifiedSet (JThrow _) = []
+    modifiedSet (JTry ec et) = msHelper [ec, et]
 
     msHelper :: [JExpr] -> [JVarRef]
     msHelper = foldr1 union . map modifiedSet
@@ -580,6 +596,9 @@ jeToLL (JCase e (xl, el) (xr, er)) = "jcase(" ++ jeToLL e
                                               ++ ", (" ++ commaSep [strToLL xl, jeToLL el] ++ ")"
                                               ++ ", (" ++ commaSep [strToLL xr, jeToLL er] ++ "))"
 jeToLL js@(JSet _ _) = error "JSet passed to jeToLL, this should never happen. " ++ pp js
+jeToLL (JAbort e) = "jabort(" ++ jeToLL e ++ ")"
+jeToLL (JThrow e) = "jthrow(" ++ jeToLL e ++ ")"
+jeToLL (JTry et ec) = "jtry(" ++ commaSep (map jeToLL [et, ec]) ++ ")"
 
 -- Converts a single JValue to low level rust code.
 jvToLL :: JValue -> String

@@ -17,6 +17,9 @@ pub enum JExprBody {
     JApply(JExpr, List<JExpr>),
     JVarRef(JVarRef),
     JCase(JExpr, (JVarRef, JExpr), (JVarRef, JExpr)),
+    JAbort(JExpr),
+    JThrow(JExpr),
+    JTry(JExpr, JExpr),
 }
 
 type JVarRef = &'static str;
@@ -59,25 +62,41 @@ pub enum JValue {
     JClosure(JVarRef, List<JVarRef>, JExpr, Env),
 }
 
+macro_rules! jewrap {
+    ($body:ident($($arg:expr),*)) => { JExpr(Leak::new(JExprBody::$body($($arg),*))) };
+}
+
 // JExpr constructor functions
 pub fn jif(ec: JExpr, et: JExpr, ef: JExpr) -> JExpr {
-    JExpr(Leak::new(JExprBody::JIf(ec, et, ef)))
+    jewrap!(JIf(ec, et, ef))
 }
 
 pub fn japply(e0: JExpr, em: List<JExpr>) -> JExpr {
-    JExpr(Leak::new(JExprBody::JApply(e0, em)))
+    jewrap!(JApply(e0, em))
 }
 
 pub fn jval(v: JValue) -> JExpr {
-    JExpr(Leak::new(JExprBody::JVal(v)))
+    jewrap!(JVal(v))
 }
 
 pub fn jvarref(vr: JVarRef) -> JExpr {
-    JExpr(Leak::new(JExprBody::JVarRef(vr)))
+    jewrap!(JVarRef(vr))
 }
 
 pub fn jcase(e: JExpr, inl: (JVarRef, JExpr), inr: (JVarRef, JExpr)) -> JExpr {
-    JExpr(Leak::new(JExprBody::JCase(e, inl, inr)))
+    jewrap!(JCase(e, inl, inr))
+}
+
+pub fn jabort(e: JExpr) -> JExpr {
+    jewrap!(JAbort(e))
+}
+
+pub fn jthrow(e: JExpr) -> JExpr {
+    jewrap!(JThrow(e))
+}
+
+pub fn jtry(et: JExpr, ec: JExpr) -> JExpr {
+    jewrap!(JTry(et, ec))
 }
 
 // Continuation pointer wrapper type
