@@ -521,6 +521,9 @@ tests = [
                                      "catch", [λ, ["_"], "nothing"]]]],
                    ["and", ["is-nothing?", ["div-maybe", 20, 0]],
                            ["is-just?", ["div-maybe", 20, 1]]]], JBool True)
+
+        , ("a", JString "missing var in env")
+        , ([1, 2], JString "delta hit bottom case")
         ]
 
 -- Convenience functions for j5 stdlib testing

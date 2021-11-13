@@ -99,6 +99,10 @@ pub fn jtry(et: JExpr, ec: JExpr) -> JExpr {
     jewrap!(JTry(et, ec))
 }
 
+pub fn str_to_abort(s: &'static str) -> JExpr {
+    jabort(jval(JValue::JString(s)))
+}
+
 // Continuation pointer wrapper type
 #[derive(Copy, Clone, Deref, Debug)]
 #[deref(forward)]
@@ -112,6 +116,12 @@ pub enum ContBody {
     KIf(Env, JExpr, JExpr, Cont),
     KApp(List<JValue>, Env, List<JExpr>, Cont),
     KCase(Env, (JVarRef, JExpr), (JVarRef, JExpr), Cont),
+    KPreTry(JExpr, Env, Cont),
+    KTry(JValue, Cont),
+}
+
+macro_rules! kwrap {
+    ($body:ident($($arg:expr),*)) => { Cont(Leak::new(ContBody::$body($($arg),*))) };
 }
 
 // Cont constructor functions
@@ -120,15 +130,23 @@ pub fn kret() -> Cont {
 }
 
 pub fn kif(env: Env, et: JExpr, ef: JExpr, k: Cont) -> Cont {
-    Cont(Leak::new(ContBody::KIf(env, et, ef, k)))
+    kwrap!(KIf(env, et, ef, k))
 }
 
 pub fn kapp(v: List<JValue>, env: Env, e: List<JExpr>, k: Cont) -> Cont {
-    Cont(Leak::new(ContBody::KApp(v, env, e, k)))
+    kwrap!(KApp(v, env, e, k))
 }
 
 pub fn kcase(env: Env, inl: (JVarRef, JExpr), inr: (JVarRef, JExpr), k: Cont) -> Cont {
-    Cont(Leak::new(ContBody::KCase(env, inl, inr, k)))
+    kwrap!(KCase(env, inl, inr, k))
+}
+
+pub fn kpretry(e: JExpr, env: Env, k: Cont) -> Cont {
+    kwrap!(KPreTry(e, env, k))
+}
+
+pub fn ktry(v: JValue, k: Cont) -> Cont {
+    kwrap!(KTry(v, k))
 }
 
 // Cek machine
@@ -164,12 +182,15 @@ impl Cek {
         use JExprBody::*;
         use JValue::*;
 
-        let Cek(body, env, orig_k) = self;
+        let Cek(orig_body, env, orig_k) = self;
 
         // Rules from 6-6 plus lambda/closure rules from 6-11
-        match (*body, *orig_k) {
+        match (*orig_body, *orig_k) {
             // Rules 1..5 from 6-6
-            (JVarRef(x), _k) => Cek(jval(env.get(x)), Env::EMPTY, orig_k),
+            (JVarRef(x), _k) => match env.get(x) {
+                Some(v) => Cek(jval(v), Env::EMPTY, orig_k),
+                None => Cek(str_to_abort("missing var in env"), env, orig_k),
+            },
             (JIf(ec, et, ef), _k) => Cek(ec, env, kif(env, et, ef, orig_k)),
             (JVal(JBool(false)), KIf(envp, _et, ef, k)) => Cek(ef, envp, k),
             (JVal(_), KIf(envp, et, _ef, k)) => Cek(et, envp, k),
@@ -202,8 +223,10 @@ impl Cek {
                 if let JClosure(_f, xs, ebody, envp) = v.last() {
                     // Closure eval (rule 2) from 6-11
                     // apply where we are applying to a closure
-                    let env = Env::from_func_apply(envp, xs, v);
-                    Cek(ebody, env, k)
+                    match Env::from_func_apply(envp, xs, v) {
+                        Some(env) => Cek(ebody, env, k),
+                        None => Cek(str_to_abort("Called func with wrong num of args"), env, k),
+                    }
                 } else {
                     // Rule 7 from 6-6
                     // Apply where we are applying to a prim
@@ -218,9 +241,22 @@ impl Cek {
             (JVal(JInl(v)), KCase(envp, (xl, el), _inr, k)) => Cek(el, envp.cons((xl, *v)), k),
             (JVal(JInr(v)), KCase(envp, _inl, (xr, er), k)) => Cek(er, envp.cons((xr, *v)), k),
 
+            // Abort case
+            (JAbort(e), _k) => Cek(e, env, kret()),
+
+            // Try/Catch cases from 12-4
+            (JTry(eb, ec), _k) => Cek(ec, env, kpretry(eb, env, orig_k)),
+            (JVal(vh), KPreTry(eb, env, k)) => Cek(eb, env, ktry(vh, k)),
+            (JVal(vans), KTry(_vh, k)) => Cek(jval(vans), Env::EMPTY, k),
+            (JThrow(e), KTry(vh, k)) => Cek(e, env, kapp([vh].into(), Env::EMPTY, List::new(), k)),
+            (JThrow(_), KPreTry(_, _, k)) => Cek(orig_body, env, k),
+            (JThrow(_), KIf(_, _, _, k)) => Cek(orig_body, env, k),
+            (JThrow(_), KApp(_, _, _, k)) => Cek(orig_body, env, k),
+            (JThrow(e), KRet) => Cek(e, env, kret()),
+
             _ => {
                 self.print_debug();
-                panic!("CEK hit bottom case");
+                Cek(str_to_abort("CEK hit bottom case"), env, orig_k)
             }
         }
     }
@@ -262,7 +298,10 @@ fn run_delta(list: List<JValue>) -> JExpr {
             v
         }
 
-        _ => panic!("delta hit bottom case, {:?}", vec),
+        _ => {
+            println!("delta couldn't handle: {:?}", vec);
+            return str_to_abort("delta hit bottom case")
+        },
     };
 
     jval(v)
@@ -290,40 +329,38 @@ impl Env {
         }
     }
 
-    pub fn get(self, var_ref: JVarRef) -> JValue {
+    pub fn get(self, var_ref: JVarRef) -> Option<JValue> {
         let mut curr = *self;
 
         while let Some(((x, v), next)) = curr.head_tail() {
             if *x == var_ref {
-                return v.get();
+                return Some(v.get());
             }
             curr = next;
         }
 
-        panic!("No var {} in environment", var_ref);
+        println!("No var {} in environment", var_ref);
+        None
     }
 
     // Generate an env for a closure body
     // Expects v to be in reverse and contain the closure at the end, so no manipulation of v
     // is needed in Cek::step
-    pub fn from_func_apply(mut env: Env, x: List<JVarRef>, v: List<JValue>) -> Env {
+    pub fn from_func_apply(mut env: Env, x: List<JVarRef>, v: List<JValue>) -> Option<Env> {
         // Lazy impl using vecs for cleaner code
         let x = x.to_vec();
         let mut v = v.to_vec();
         v.pop();
         v.reverse();
 
-        assert_eq!(
-            x.len(),
-            v.len(),
-            "apply expected args {:?} but got {:?}",
-            x,
-            v
-        );
-
-        for (x, v) in x.iter().zip(v.iter()) {
-            env = env.cons((*x, *v));
+        // Parameter len doesnt equal argument count
+        if x.len() != v.len() {
+            None
+        } else {
+            for (x, v) in x.iter().zip(v.iter()) {
+                env = env.cons((*x, *v));
+            }
+            Some(env)
         }
-        env
     }
 }
