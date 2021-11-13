@@ -142,7 +142,7 @@ impl<T> FromIterator<T> for List<T> {
     }
 }
 
-impl<T, I: IntoIterator<Item = T>> From<I> for List<T> {
+impl<I: IntoIterator> From<I> for List<I::Item> {
     fn from(iter: I) -> Self {
         List::from_iter(iter)
     }
