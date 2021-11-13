@@ -49,7 +49,7 @@ pub enum JValue {
     JInrOp,
     JFst,
     JSnd,
-    JField(JVarRef),
+    JString(JVarRef),
     JStrEq,
 
     JSigma(Leak<JValue>),
@@ -253,7 +253,7 @@ fn run_delta(list: List<JValue>) -> JExpr {
         [JFst, JPair(vl, _)] => *vl,
         [JSnd, JPair(_, vr)] => *vr,
 
-        [JStrEq, JField(a), JField(b)] => JBool(a == b),
+        [JStrEq, JString(a), JString(b)] => JBool(a == b),
 
         [JBox, v] => JSigma(Leak::new(v)),
         [JUnbox, JSigma(l)] => *l,

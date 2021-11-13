@@ -24,7 +24,7 @@ data JValue = JNum Integer
             | JPlus | JMinus | JMult | JDiv | JLtEq | JLt | JEq | JGt | JGtEq
             | JUnit | JPair JValue JValue | JInl JValue | JInr JValue
             | JInlOp | JInrOp | JPairOp | JFst | JSnd
-            | JField JVarRef | JStrEq
+            | JString JVarRef | JStrEq
             | JSigma JValue | JBox | JUnbox | JSetBox
             deriving (Show, Eq)
 
@@ -57,7 +57,7 @@ pp (JVal val) = case val of
     JInl v -> "(inl " ++ pp (JVal v) ++ ")"
     JInr v -> "(inr " ++ pp (JVal v) ++ ")"
     JPair vl vr -> "(pair " ++ pp (JVal vl) ++ " " ++ pp (JVal vr) ++ ")"
-    JField s -> s
+    JString s -> s
     JStrEq -> "string=?"
     JLambda f xs ebody -> "(λ " ++ f ++ " (" ++ unwords (map (pp . JVarRef) xs) ++ ") " ++ pp ebody
                             ++ ")"
@@ -122,9 +122,9 @@ desugar (SEList l) = case l of
     -- obj creation recursive case
     [SESym "obj", SEList ((SESym x):e:binds)] ->
         let tailObj = desugar ["obj", SEList binds]
-        in JApply (desugar "obj-set") [tailObj, JVal (JField x), desugar e]
+        in JApply (desugar "obj-set") [tailObj, JVal (JString x), desugar e]
     -- obj field access / dot syntax
-    [SESym "ref", e, SESym x] -> JApply (desugar "obj-lookup") [desugar e, JVal (JField x)]
+    [SESym "ref", e, SESym x] -> JApply (desugar "obj-lookup") [desugar e, JVal (JString x)]
     -- sequence / (e0; e1)
     [SESym "seq", e0, e1] -> desugar ["let", ["_", e0], e1]
     -- begin empty case
@@ -625,7 +625,7 @@ jvToLL v = "JValue::" ++ case v of
     JInl v -> "JInl(" ++ leakWrap (jvToLL v) ++ ")"
     JInr v -> "JInr(" ++ leakWrap (jvToLL v) ++ ")"
     JPair l r -> "JPair(" ++ commaSep (map (leakWrap . jvToLL) [l, r]) ++ ")"
-    JField s -> "JField(" ++ strToLL s ++ ")"
+    JString s -> "JString(" ++ strToLL s ++ ")"
     JStrEq -> "JStrEq"
     JSigma v -> "JSigma(" ++ leakWrap (jvToLL v) ++ ")"
     JBox -> "JBox"
