@@ -487,6 +487,40 @@ tests = [
                                                              ["collatz-highest", "x", "h"]]],
                         "even?", [λ, ["x"], ["=", "x", ["*", 2, ["/", "x", 2]]]]],
                       ["collatz-highest", 27, 0]], JNum 9232)
+
+        -- J9 tests
+        , (["abort", 5], JNum 5)
+        , (["let", ["x", 5, "y", ["abort", "unit"]], "x"], JUnit)
+        , (["let", ["later-abort", [λ, ["n"], ["if", [">", "n", 1000],
+                                                     ["abort", -30],
+                                                     ["rec", ["+", 1, "n"]]]]],
+                   ["later-abort", 0]], JNum (-30))
+
+        , (["throw", 5], JNum 5)
+        , (["let", ["later-throw", [λ, ["n"], ["if", [">", "n", 1000],
+                                                     ["throw", -30],
+                                                     ["rec", ["+", 1, "n"]]]]],
+                   ["later-throw", 0]], JNum (-30))
+        , (["try", 5, "catch", [λ, ["_"], "unit"]], JNum 5)
+        , (["try", ["throw", 5],
+            "catch", "inl"], JInl (JNum 5))
+        , (["try", ["try", 5, "catch", ["throw", 10]],
+            "catch", [λ, ["x"], ["+", "x", 5]]], JNum 15)
+        , (["try", ["if", ["throw", 20], 5, 10],
+            "catch", "inl"], JInl (JNum 20))
+        , (["try", ["cons", 5, ["cons", 10, ["cons", 15, ["throw", "unit"]]]],
+            "catch", "id"], JUnit)
+        , (["let", ["div-throw", [λ, ["dend", "dsor"], ["if", ["=", "dsor", 0],
+                                                              ["throw", ["pair", "dend", "dsor"]],
+                                                              ["/", "dend", "dsor"]]]],
+                   ["div-throw", 20, 0]], JPair (JNum 20) (JNum 0))
+        , (["let", ["div-maybe", [λ, ["dend", "dsor"],
+                                     ["try", ["if", ["=", "dsor", 0],
+                                                    ["throw", "unit"],
+                                                    ["just", ["/", "dend", "dsor"]]],
+                                     "catch", [λ, ["_"], "nothing"]]]],
+                   ["and", ["is-nothing?", ["div-maybe", 20, 0]],
+                           ["is-just?", ["div-maybe", 20, 1]]]], JBool True)
         ]
 
 -- Convenience functions for j5 stdlib testing
@@ -541,6 +575,9 @@ addStdlibToSE se = ["let*", stdlib, se]
              , "or", [λ, ["a", "b"], ["if", "a", "true", "b"]]
              , "and", [λ, ["a", "b"], ["if", "a", "b", "false"]]
              , "not", [λ, ["b"], ["if", "b", "false", "true"]]
+             , "id", [λ, ["x"], "x"]
+             , "is-just?", [λ, ["o"], ["case", "o", ["_", "false"], ["_", "true"]]]
+             , "is-nothing?", [λ, ["o"], ["not", ["is-just?", "o"]]]
              ]
 
 -- Takes an sexpr and puts it into the task 35
@@ -682,8 +719,8 @@ runCommand :: String -> IO ()
 runCommand s = spawnCommand s >>= waitForProcess >> return ()
 
 main :: IO ()
--- main = forM_ (drop 72 tests) runTestInLL
-main = forM_ tests runTestInLL
+main = forM_ (drop 84 tests) runTestInLL
+-- main = forM_ tests runTestInLL
 
 -- Enable conversion from number literals into SENum
 -- Only fromInteger and negate are needed so the rest is left undefined
