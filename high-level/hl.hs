@@ -244,8 +244,8 @@ j7toj6 = trans []
     modifiedSet (JVal (JLambda f xs eb))  = delete (f : xs) (modifiedSet eb)
     modifiedSet (JVal _)    = []
     modifiedSet (JVarRef _) = []
-    modifiedSet (JAbort _) = []
-    modifiedSet (JThrow _) = []
+    modifiedSet (JAbort e) = modifiedSet e
+    modifiedSet (JThrow e) = modifiedSet e
     modifiedSet (JTry ec et) = msHelper [ec, et]
 
     msHelper :: [JExpr] -> [JVarRef]
