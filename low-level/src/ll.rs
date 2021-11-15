@@ -18,8 +18,7 @@ pub enum JExprBody {
     JVarRef(JVarRef),
     JCase(JExpr, (JVarRef, JExpr), (JVarRef, JExpr)),
     JAbort(JExpr),
-    JThrow(JExpr),
-    JTry(JExpr, JExpr),
+    JCallCC(JExpr),
 }
 
 type JVarRef = &'static str;
@@ -60,6 +59,9 @@ pub enum JValue {
     // Closure type used in the CEK machine
     // This should never be used anywhere outside of Cek::step
     JClosure(JVarRef, List<JVarRef>, JExpr, Env),
+
+    // aka "v = .. | Kont k" from 13-4
+    JCont(Cont),
 }
 
 macro_rules! jewrap {
@@ -91,12 +93,8 @@ pub fn jabort(e: JExpr) -> JExpr {
     jewrap!(JAbort(e))
 }
 
-pub fn jthrow(e: JExpr) -> JExpr {
-    jewrap!(JThrow(e))
-}
-
-pub fn jtry(et: JExpr, ec: JExpr) -> JExpr {
-    jewrap!(JTry(et, ec))
+pub fn jcallcc(e: JExpr) -> JExpr {
+    jewrap!(JCallCC(e))
 }
 
 pub fn str_to_abort(s: &'static str) -> JExpr {
@@ -104,20 +102,19 @@ pub fn str_to_abort(s: &'static str) -> JExpr {
 }
 
 // Continuation pointer wrapper type
-#[derive(Copy, Clone, Deref, Debug)]
+#[derive(Copy, Clone, Deref, Debug, PartialEq, Eq)]
 #[deref(forward)]
 pub struct Cont(Leak<ContBody>);
 
 // K ::= KRet | (KIf e e K) | (KApp (v..) (e..) K)
 // Aka Continuation
-#[derive(Clone, Copy, Debug, IsVariant)]
+#[derive(Clone, Copy, Debug, IsVariant, PartialEq, Eq)]
 pub enum ContBody {
     KRet,
     KIf(Env, JExpr, JExpr, Cont),
     KApp(List<JValue>, Env, List<JExpr>, Cont),
     KCase(Env, (JVarRef, JExpr), (JVarRef, JExpr), Cont),
-    KPreTry(JExpr, Env, Cont),
-    KTry(JValue, Cont),
+    KCallCC(Cont),
 }
 
 macro_rules! kwrap {
@@ -141,12 +138,8 @@ pub fn kcase(env: Env, inl: (JVarRef, JExpr), inr: (JVarRef, JExpr), k: Cont) ->
     kwrap!(KCase(env, inl, inr, k))
 }
 
-pub fn kpretry(e: JExpr, env: Env, k: Cont) -> Cont {
-    kwrap!(KPreTry(e, env, k))
-}
-
-pub fn ktry(v: JValue, k: Cont) -> Cont {
-    kwrap!(KTry(v, k))
+pub fn kcallcc(k: Cont) -> Cont {
+    kwrap!(KCallCC(k))
 }
 
 // Cek machine
@@ -243,16 +236,6 @@ impl Cek {
 
             // Abort case
             (JAbort(e), _k) => Cek(e, env, kret()),
-
-            // Try/Catch cases from 12-4
-            (JTry(eb, ec), _k) => Cek(ec, env, kpretry(eb, env, orig_k)),
-            (JVal(vh), KPreTry(eb, env, k)) => Cek(eb, env, ktry(vh, k)),
-            (JVal(vans), KTry(_vh, k)) => Cek(jval(vans), Env::EMPTY, k),
-            (JThrow(e), KTry(vh, k)) => Cek(e, env, kapp([vh].into(), Env::EMPTY, List::new(), k)),
-            (JThrow(_), KPreTry(_, _, k)) => Cek(orig_body, env, k),
-            (JThrow(_), KIf(_, _, _, k)) => Cek(orig_body, env, k),
-            (JThrow(_), KApp(_, _, _, k)) => Cek(orig_body, env, k),
-            (JThrow(e), KRet) => Cek(e, env, kret()),
 
             _ => {
                 self.print_debug();
