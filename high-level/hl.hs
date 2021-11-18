@@ -492,36 +492,61 @@ tests = [
                                                      ["abort", -30],
                                                      ["rec", ["+", 1, "n"]]]]],
                    ["later-abort", 0]], JNum (-30))
-
-        , (["throw", 5], JNum 5)
-        , (["let", ["later-throw", [λ, ["n"], ["if", [">", "n", 1000],
-                                                     ["throw", -30],
-                                                     ["rec", ["+", 1, "n"]]]]],
-                   ["later-throw", 0]], JNum (-30))
-        , (["try", 5, "catch", [λ, ["_"], "unit"]], JNum 5)
-        , (["try", ["throw", 5],
-            "catch", "inl"], JInl (JNum 5))
-        , (["try", ["try", 5, "catch", ["throw", 10]],
-            "catch", [λ, ["x"], ["+", "x", 5]]], JNum 15)
-        , (["try", ["if", ["throw", 20], 5, 10],
-            "catch", "inl"], JInl (JNum 20))
-        , (["try", ["cons", 5, ["cons", 10, ["cons", 15, ["throw", "unit"]]]],
-            "catch", "id"], JUnit)
-        , (["let", ["div-throw", [λ, ["dend", "dsor"], ["if", ["=", "dsor", 0],
-                                                              ["throw", ["pair", "dend", "dsor"]],
-                                                              ["/", "dend", "dsor"]]]],
-                   ["div-throw", 20, 0]], JPair (JNum 20) (JNum 0))
-        , (["let", ["div-maybe", [λ, ["dend", "dsor"],
-                                     ["try", ["if", ["=", "dsor", 0],
-                                                    ["throw", "unit"],
-                                                    ["just", ["/", "dend", "dsor"]]],
-                                     "catch", [λ, ["_"], "nothing"]]]],
-                   ["and", ["is-nothing?", ["div-maybe", 20, 0]],
-                           ["is-just?", ["div-maybe", 20, 1]]]], JBool True)
-
+        -- , (["throw", 5], JNum 5)
+        -- , (["let", ["later-throw", [λ, ["n"], ["if", [">", "n", 1000],
+        --                                              ["throw", -30],
+        --                                              ["rec", ["+", 1, "n"]]]]],
+        --            ["later-throw", 0]], JNum (-30))
+        -- , (["try", 5, "catch", [λ, ["_"], "unit"]], JNum 5)
+        -- , (["try", ["throw", 5],
+        --     "catch", "inl"], JInl (JNum 5))
+        -- , (["try", ["try", 5, "catch", ["throw", 10]],
+        --     "catch", [λ, ["x"], ["+", "x", 5]]], JNum 15)
+        -- , (["try", ["if", ["throw", 20], 5, 10],
+        --     "catch", "inl"], JInl (JNum 20))
+        -- , (["try", ["cons", 5, ["cons", 10, ["cons", 15, ["throw", "unit"]]]],
+        --     "catch", "id"], JUnit)
+        -- , (["let", ["div-throw", [λ, ["dend", "dsor"], ["if", ["=", "dsor", 0],
+        --                                                       ["throw", ["pair", "dend", "dsor"]],
+        --                                                       ["/", "dend", "dsor"]]]],
+        --            ["div-throw", 20, 0]], JPair (JNum 20) (JNum 0))
+        -- , (["let", ["div-maybe", [λ, ["dend", "dsor"],
+        --                              ["try", ["if", ["=", "dsor", 0],
+        --                                             ["throw", "unit"],
+        --                                             ["just", ["/", "dend", "dsor"]]],
+        --                              "catch", [λ, ["_"], "nothing"]]]],
+        --            ["and", ["is-nothing?", ["div-maybe", 20, 0]],
+        --                    ["is-just?", ["div-maybe", 20, 1]]]], JBool True)
         , ("a", JString "missing var in env")
         , ([1, 2], JString "delta hit bottom case")
         , (["/", 1, 0], JString "divide by zero")
+
+        -- J10 tests
+        , (["callcc", [λ, ["_"], 5]], JNum 5)
+        , (["callcc", [λ, ["k"], ["+", 5, ["k", 10]]]], JNum 10)
+        , (["+", 5, ["callcc", [λ, ["k"], ["+", 10, ["k", 15]]]]], JNum 20)
+        , (["+", 5, ["letcc", "k", ["+", 10, ["k", 15]]]], JNum 20)
+        , (["+", 5, ["letcc", "a", ["+", 30, ["letcc", "b", ["+", 100, ["letcc", "c", ["a", 10]]]]]]],
+           JNum 15)
+        , ([[λ, [], ["begin", ["return", 10], 15]]], JNum 10)
+        , (["let", ["fac", [λ, "fac", ["x"], ["begin",
+                                                 ["when", ["=", "x", 1], ["return", 1]],
+                                                 ["*", "x", ["fac", ["-", "x", 1]]]]]],
+                   ["fac", 5]], JNum 120)
+        , (["let", ["id", [λ, ["x"], ["while", "true", ["break", "x"]]]],
+                   ["and", ["=", ["id", 25], 25],
+                           ["=", ["id", 30], 30]]], JBool True)
+        , (["let", ["x", 0], ["while", "true",
+                                 ["when", [">", "x", 20], ["break", "x"]],
+                                 ["set!", "x", ["+", "x", 1]]]], JNum 21)
+        , (["let", ["x", 0,
+                    "y", 0,
+                    "even?", [λ, ["x"], ["=", "x", ["*", 2, ["/", "x", 2]]]]],
+                   ["while", "true",
+                       ["when", [">=", "x", 30], ["break", "y"]],
+                       ["set!", "x", ["+", "x", 1]],
+                       ["when", ["even?", "x"], ["continue", "unit"]],
+                       ["set!", "y", ["+", "y", 1]]]], JNum 15)
         ]
 
 -- Convenience functions for j5 stdlib testing
