@@ -83,6 +83,10 @@ impl<T> List<T> {
         }
     }
 
+    pub fn head(&self) -> Option<&T> {
+        self.head_tail().map(|(t, _)| t)
+    }
+
     pub fn is_empty(self) -> bool {
         self.0.is_none()
     }
@@ -155,8 +159,8 @@ impl<T: Debug + Clone> Debug for List<T> {
 }
 
 // Alias trait for Into<List<T>> -> IntoList<T>
-pub trait IntoList<T>: Into<List<T>> {}
-impl<T, S> IntoList<T> for S where S: Into<List<T>> {}
+// pub trait IntoList<T>: Into<List<T>> {}
+// impl<T, S> IntoList<T> for S where S: Into<List<T>> {}
 
 #[test]
 fn linked_list_test() {

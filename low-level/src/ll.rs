@@ -208,6 +208,13 @@ impl Cek {
                 Cek(*e0, envp, kapp(v, envp, em, k))
             }
 
+            // 13-3 rule 3 apply on JCont
+            // has to come before regular apply rule
+            (JVal(v_), KApp(v, _, _, _)) if v.head().map(JValue::is_j_cont).unwrap_or(false) => {
+                let kp = v.head().unwrap().unwrap_j_cont();
+                Cek(jval(v_), Env::EMPTY, kp)
+            }
+
             // Combination of two rules (6-6 rule 7 and 6-11 rule 2)
             // Apply where all parameters have been evaluated to values
             (JVal(vn), KApp(v, _envp, _e, k)) => {
@@ -236,6 +243,12 @@ impl Cek {
 
             // Abort case
             (JAbort(e), _k) => Cek(e, env, kret()),
+
+            // 13-3 callcc related rules
+            (JCallCC(e), _k) => Cek(e, env, kcallcc(orig_k)),
+            (JVal(v), KCallCC(k)) => {
+                Cek(jval(JCont(k)), Env::EMPTY, kapp([v].into(), Env::EMPTY, [].into(), k))
+            }
 
             _ => {
                 self.print_debug();
@@ -284,8 +297,8 @@ fn run_delta(list: List<JValue>) -> JExpr {
 
         _ => {
             println!("delta couldn't handle: {:?}", vec);
-            return str_to_abort("delta hit bottom case")
-        },
+            return str_to_abort("delta hit bottom case");
+        }
     };
 
     jval(v)
