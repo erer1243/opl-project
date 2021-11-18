@@ -159,6 +159,8 @@ desugar (SEList l) = case l of
     [SESym "abort", e] -> JAbort $ desugar e
     -- callcc form
     [SESym "callcc", e] -> JCallCC $ desugar e
+    -- try/catch form
+    [SESym "try", eb, "catch", ec] -> desugar ["trycatch*", [λ, [], eb], ec]
     -- general apply
     (sym:args) -> JApply (desugar sym) (map desugar args)
     -- Error case
@@ -492,31 +494,31 @@ tests = [
                                                      ["abort", -30],
                                                      ["rec", ["+", 1, "n"]]]]],
                    ["later-abort", 0]], JNum (-30))
-        -- , (["throw", 5], JNum 5)
-        -- , (["let", ["later-throw", [λ, ["n"], ["if", [">", "n", 1000],
-        --                                              ["throw", -30],
-        --                                              ["rec", ["+", 1, "n"]]]]],
-        --            ["later-throw", 0]], JNum (-30))
-        -- , (["try", 5, "catch", [λ, ["_"], "unit"]], JNum 5)
-        -- , (["try", ["throw", 5],
-        --     "catch", "inl"], JInl (JNum 5))
-        -- , (["try", ["try", 5, "catch", ["throw", 10]],
-        --     "catch", [λ, ["x"], ["+", "x", 5]]], JNum 15)
-        -- , (["try", ["if", ["throw", 20], 5, 10],
-        --     "catch", "inl"], JInl (JNum 20))
-        -- , (["try", ["cons", 5, ["cons", 10, ["cons", 15, ["throw", "unit"]]]],
-        --     "catch", "id"], JUnit)
-        -- , (["let", ["div-throw", [λ, ["dend", "dsor"], ["if", ["=", "dsor", 0],
-        --                                                       ["throw", ["pair", "dend", "dsor"]],
-        --                                                       ["/", "dend", "dsor"]]]],
-        --            ["div-throw", 20, 0]], JPair (JNum 20) (JNum 0))
-        -- , (["let", ["div-maybe", [λ, ["dend", "dsor"],
-        --                              ["try", ["if", ["=", "dsor", 0],
-        --                                             ["throw", "unit"],
-        --                                             ["just", ["/", "dend", "dsor"]]],
-        --                              "catch", [λ, ["_"], "nothing"]]]],
-        --            ["and", ["is-nothing?", ["div-maybe", 20, 0]],
-        --                    ["is-just?", ["div-maybe", 20, 1]]]], JBool True)
+        , (["throw", 5], JNum 5)
+        , (["let", ["later-throw", [λ, ["n"], ["if", [">", "n", 1000],
+                                                     ["throw", -30],
+                                                     ["rec", ["+", 1, "n"]]]]],
+                   ["later-throw", 0]], JNum (-30))
+        , (["try", 5, "catch", [λ, ["_"], "unit"]], JNum 5)
+        , (["try", ["throw", 5],
+            "catch", "inl"], JInl (JNum 5))
+        , (["try", ["try", 5, "catch", ["throw", 10]],
+            "catch", [λ, ["x"], ["+", "x", 5]]], JNum 15)
+        , (["try", ["if", ["throw", 20], 5, 10],
+            "catch", "inl"], JInl (JNum 20))
+        , (["try", ["cons", 5, ["cons", 10, ["cons", 15, ["throw", "unit"]]]],
+            "catch", "id"], JUnit)
+        , (["let", ["div-throw", [λ, ["dend", "dsor"], ["if", ["=", "dsor", 0],
+                                                              ["throw", ["pair", "dend", "dsor"]],
+                                                              ["/", "dend", "dsor"]]]],
+                   ["div-throw", 20, 0]], JPair (JNum 20) (JNum 0))
+        , (["let", ["div-maybe", [λ, ["dend", "dsor"],
+                                     ["try", ["if", ["=", "dsor", 0],
+                                                    ["throw", "unit"],
+                                                    ["just", ["/", "dend", "dsor"]]],
+                                     "catch", [λ, ["_"], "nothing"]]]],
+                   ["and", ["is-nothing?", ["div-maybe", 20, 0]],
+                           ["is-just?", ["div-maybe", 20, 1]]]], JBool True)
         , ("a", JString "missing var in env")
         , ([1, 2], JString "delta hit bottom case")
         , (["/", 1, 0], JString "divide by zero")
@@ -604,6 +606,20 @@ addStdlibToSE se = ["let*", stdlib, se]
              , "id", [λ, ["x"], "x"]
              , "is-just?", [λ, ["o"], ["case", "o", ["_", "false"], ["_", "true"]]]
              , "is-nothing?", [λ, ["o"], ["not", ["is-just?", "o"]]]
+             -- J10 stdlib additions
+             , "last-handler", ["box", [λ, ["x"], ["abort", "x"]]]
+             , "throw", [λ, ["v"], [["unbox", "last-handler"], "v"]]
+             , "trycatch*", [λ, ["body", "newh"],
+                                ["let", ["oldh", ["unbox", "last-handler"]],
+                                        ["letcc", "here",
+                                            ["begin",
+                                                ["set-box!", "last-handler",
+                                                    [λ, ["x"],
+                                                       ["begin",
+                                                           ["set-box!", "last-handler", "oldh"],
+                                                           ["here", ["newh", "x"]]]]],
+                                                ["begin0", ["body"],
+                                                           ["set-box!", "last-handler", "oldh"]]]]]]
              ]
 
 -- Takes an sexpr and puts it into the task 35
