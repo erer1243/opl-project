@@ -98,12 +98,13 @@ desugar (SEList l) = case l of
     [SESym "if", ec, et, ef] -> JIf (desugar ec) (desugar et) (desugar ef)
     -- lambda
     [SESym "lambda", SESym f, SEList xs, ebody] -> JVal $ JLambda f (map unwrapSESym xs)
-                                                                    (desugar ebody)
+                                                                    -- (desugar ebody)
+                                                                    (desugar ["letcc", "return", ebody])
     -- lambda with default recursive name
     [SESym "lambda", SEList xs, ebody] -> desugar ["lambda", "rec", SEList xs, ebody]
     -- let form
     [SESym "let", SEList binds, ebody] -> let (xs, es) = bindingPairs binds
-                                          in JApply (JVal $ JLambda "rec" xs (desugar ebody)) (map desugar es)
+                                          in JApply (JVal $ JLambda "_" xs (desugar ebody)) (map desugar es)
     -- let* form base case
     [SESym "let*", SEList [], ebody] -> desugar ebody
     -- let* form recursive case
@@ -140,7 +141,10 @@ desugar (SEList l) = case l of
     -- unless form
     (SESym "unless":c:es) -> desugar ["when", ["not", c], SEList es]
     -- while form
-    (SESym "while":c:es) -> desugar [[λ, "while-rec", [], SEList (["when", c] ++ es ++ [["while-rec"]])]]
+    (SESym "while":c:es) ->
+        desugar [[λ, "while-rec", [],
+                    ["letcc", "break",
+                        ["when", c, ["letcc", "continue", SEList ("begin" : es)], ["while-rec"]]]]]
     -- for form
     (SESym "for":(SEList [SESym x, init, limit, inc]):eb) ->
         desugar ["let", ["xb", ["box", init]],
@@ -159,6 +163,8 @@ desugar (SEList l) = case l of
     [SESym "abort", e] -> JAbort $ desugar e
     -- callcc form
     [SESym "callcc", e] -> JCallCC $ desugar e
+    -- letcc form
+    [SESym "letcc", SESym k, e] -> JCallCC $ JVal $ JLambda "_" [k] (desugar e)
     -- try/catch form
     [SESym "try", eb, "catch", ec] -> desugar ["trycatch*", [λ, [], eb], ec]
     -- general apply
