@@ -275,6 +275,7 @@ fn run_delta(list: List<JValue>) -> JExpr {
         [JPlus, JNum(a), JNum(b)] => JNum(a + b),
         [JMinus, JNum(a), JNum(b)] => JNum(a - b),
         [JMult, JNum(a), JNum(b)] => JNum(a * b),
+        [JDiv, _, JNum(0)] => return str_to_abort("divide by zero"),
         [JDiv, JNum(a), JNum(b)] => JNum(a / b),
         [JLtEq, JNum(a), JNum(b)] => JBool(a <= b),
         [JLt, JNum(a), JNum(b)] => JBool(a < b),

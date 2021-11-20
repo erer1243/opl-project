@@ -524,6 +524,7 @@ tests = [
 
         , ("a", JString "missing var in env")
         , ([1, 2], JString "delta hit bottom case")
+        , (["/", 1, 0], JString "divide by zero")
         ]
 
 -- Convenience functions for j5 stdlib testing
