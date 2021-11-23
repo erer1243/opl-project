@@ -27,6 +27,8 @@ data JValue = JNum Integer
             | JInlOp | JInrOp | JPairOp | JFst | JSnd
             | JString JVarRef | JStrEq
             | JSigma JValue | JBox | JUnbox | JSetBox
+            | JNumberQ | JBoxQ | JBooleanQ | JPairQ | JUnitQ | JInlQ | JInrQ | JContinuationQ
+            | JFunctionQ | JPrimitiveQ | JFunctionArity | JPrimitiveArity
             deriving (Show, Eq)
 
 type JVarRef = String
@@ -66,6 +68,18 @@ pp (JVal val) = case val of
     JBox -> "box"
     JUnbox -> "unbox"
     JSetBox -> "set-box!"
+    JNumberQ -> "number?"
+    JBoxQ -> "box?"
+    JBooleanQ -> "boolean?"
+    JPairQ -> "pair?"
+    JUnitQ -> "unit?"
+    JInlQ -> "inl?"
+    JInrQ -> "inr?"
+    JContinuationQ -> "continuation?"
+    JFunctionQ -> "function?"
+    JPrimitiveQ -> "primitive?"
+    JFunctionArity -> "function-arity"
+    JPrimitiveArity -> "primitive-arity"
 pp (JIf cond e1 e2) = "(if " ++ pp cond ++ " " ++ pp e1 ++ " " ++ pp e2 ++ ")"
 pp (JApply e0 en) = let ppEn = if null en then "" else " " ++ unwords (map pp en)
                     in "(" ++ pp e0 ++ ppEn ++ ")"
@@ -194,6 +208,18 @@ desugar (SESym s) = case s of
     "box" -> JVal JBox
     "unbox" -> JVal JUnbox
     "set-box!" -> JVal JSetBox
+    "number?" -> JVal JNumberQ
+    "boolean?" -> JVal JBooleanQ
+    "pair?" -> JVal JPairQ
+    "unit?" -> JVal JUnitQ
+    "box?" -> JVal JBoxQ
+    "inl?" -> JVal JInlQ
+    "inr?" -> JVal JInrQ
+    "continuation?" -> JVal JContinuationQ
+    "function?" -> JVal JFunctionQ
+    "primitive?" -> JVal JPrimitiveQ
+    "function-arity" -> JVal JFunctionArity
+    "primitive-arity" -> JVal JPrimitiveArity
     -- Anything else -> var ref
     _ -> JVarRef s
 
@@ -571,7 +597,7 @@ tests = [
         , (["and", ["=", ["function-arity", "not"], 1],
                    ["=", ["function-arity", "reduce"], 3]], JBool True)
         , (["and", ["=", ["primitive-arity", "pair"], 2],
-                   ["=", ["primitive-arity", "inr"], 3]], JBool True)
+                   ["=", ["primitive-arity", "inr"], 1]], JBool True)
         , (["and", ["procedure?", "inl"],
                    ["and", ["procedure?", [λ, ["_"], "unit"]],
                            ["and", ["letcc", "k", ["procedure?", "k"]],
@@ -579,8 +605,8 @@ tests = [
         , (["and", ["=", ["procedure-arity", "pair"], 2],
                    ["and", ["=", ["procedure-arity", "reduce"], 3],
                            ["=", ["letcc", "k", ["procedure-arity", "k"]], 1]]], JBool True)
-        , (["try", ["+", "true", 5], "catch", [λ, ["_"], "unit"]], JUnit)
-        , (["try", ["/", "+", "-"], "catch", [λ, ["_"], 5]], JNum 5)
+        -- , (["try", ["+", "true", 5], "catch", [λ, ["_"], "unit"]], JUnit)
+        -- , (["try", ["/", "+", "-"], "catch", [λ, ["_"], 5]], JNum 5)
         ]
 
 -- Convenience functions for j5 stdlib testing
@@ -652,6 +678,14 @@ addStdlibToSE se = ["let*", stdlib, se]
                                                            ["here", ["newh", "x"]]]]],
                                                 ["begin0", ["body"],
                                                            ["set-box!", "last-handler", "oldh"]]]]]]
+             , "procedure?", [λ, ["x"], ["or", ["function?", "x"],
+                                               ["or", ["primitive?", "x"],
+                                                      ["continuation?", "x"]]]]
+             , "procedure-arity", [λ, ["x"], ["if", ["function?", "x"],
+                                                     ["function-arity", "x"],
+                                                     ["if", ["primitive?", "x"],
+                                                            ["primitive-arity", "x"],
+                                                            1]]]
              ]
 
 -- Takes an sexpr and puts it into the task 35
@@ -741,6 +775,18 @@ jvToLL v = "JValue::" ++ case v of
     JBox -> "JBox"
     JUnbox -> "JUnbox"
     JSetBox -> "JSetBox"
+    JNumberQ -> "JNumberQ"
+    JBoxQ -> "JBoxQ"
+    JBooleanQ -> "JBooleanQ"
+    JPairQ -> "JPairQ"
+    JUnitQ -> "JUnitQ"
+    JInlQ -> "JInlQ"
+    JInrQ -> "JInrQ"
+    JContinuationQ -> "JContinuationQ"
+    JFunctionQ -> "JFunctionQ"
+    JPrimitiveQ -> "JPrimitiveQ"
+    JFunctionArity -> "JFunctionArity"
+    JPrimitiveArity -> "JPrimitiveArity"
 
 commaSep :: [String] -> String
 commaSep  = intercalate ", "
@@ -792,8 +838,8 @@ runCommand :: String -> IO ()
 runCommand s = spawnCommand s >>= waitForProcess >> return ()
 
 main :: IO ()
--- main = forM_ (drop 84 tests) runTestInLL
-main = forM_ tests runTestInLL
+main = forM_ (drop 100 tests) runTestInLL
+-- main = forM_ tests runTestInLL
 
 -- Enable conversion from number literals into SENum
 -- Only fromInteger and negate are needed so the rest is left undefined

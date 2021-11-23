@@ -16,6 +16,12 @@ impl<T> Leak<T> {
             *self.0 = data;
         }
     }
+
+    pub fn free(self) {
+        unsafe {
+            drop(Box::from_raw(self.0));
+        }
+    }
 }
 
 impl<T> Clone for Leak<T> {
@@ -71,7 +77,10 @@ impl<T> List<T> {
     }
 
     pub fn cons(data: T, tail: List<T>) -> List<T> {
-        let node = Node { data, next: tail.0 };
+        let node = Node {
+            data,
+            next: tail.0,
+        };
 
         List(Some(Leak::new(node)))
     }

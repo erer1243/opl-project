@@ -62,6 +62,19 @@ pub enum JValue {
 
     // aka "v = .. | Kont k" from 13-4
     JCont(Cont),
+
+    JNumberQ,
+    JBoxQ,
+    JBooleanQ,
+    JPairQ,
+    JUnitQ,
+    JInlQ,
+    JInrQ,
+    JContinuationQ,
+    JFunctionQ,
+    JPrimitiveQ,
+    JFunctionArity,
+    JPrimitiveArity,
 }
 
 macro_rules! jewrap {
@@ -261,13 +274,16 @@ impl Cek {
 // Delta expects a list in reverse order, because of the cek machine
 // rule 5 reverse-order trick
 fn run_delta(list: List<JValue>) -> JExpr {
-    use JValue::*;
-
     // Lazy implementation using vec to reverse the list and get clean match code
     let mut vec = list.to_vec();
     vec.reverse();
+    run_delta_slice(vec.as_slice())
+}
 
-    let v = match vec[..] {
+fn run_delta_slice(vals: &[JValue]) -> JExpr {
+    use JValue::*;
+
+    let v = match vals[..] {
         [JPlus, JNum(a), JNum(b)] => JNum(a + b),
         [JMinus, JNum(a), JNum(b)] => JNum(a - b),
         [JMult, JNum(a), JNum(b)] => JNum(a * b),
@@ -295,8 +311,31 @@ fn run_delta(list: List<JValue>) -> JExpr {
             v
         }
 
+        [JNumberQ, x] => JBool(x.is_j_num()),
+        [JBoxQ, x] => JBool(x.is_j_sigma()),
+        [JBooleanQ, x] => JBool(x.is_j_bool()),
+        [JPairQ, x] => JBool(x.is_j_pair()),
+        [JUnitQ, x] => JBool(x.is_j_unit()),
+        [JInlQ, x] => JBool(x.is_j_inl()),
+        [JInrQ, x] => JBool(x.is_j_inr()),
+        [JContinuationQ, x] => JBool(x.is_j_cont()),
+        [JFunctionQ, x] => JBool(x.is_j_closure()),
+        [JPrimitiveQ, x] => {
+            // Free expr? (and the subexpr if its an abort)
+            let expr = run_delta_slice(&[JPrimitiveArity, x]);
+            let b = expr.is_j_val();
+            JBool(b)
+        }
+        [JFunctionArity, JClosure(_, params, _, _)] => JNum(params.len() as i32),
+        [JPrimitiveArity, x] => JNum(match x {
+            JPlus | JMinus | JMult | JDiv | JLtEq | JLt | JEq | JGt | JGtEq | JPairOp | JStrEq => 2,
+            JInlOp | JInrOp | JFst | JSnd | JBox | JUnbox | JSetBox | JNumberQ | JBoxQ
+            | JBooleanQ | JPairQ | JUnitQ | JInlQ | JInrQ | JContinuationQ | JFunctionQ
+            | JPrimitiveQ | JFunctionArity | JPrimitiveArity => 1,
+            _ => return str_to_abort("primitive-arity called on non-primitive"),
+        }),
         _ => {
-            println!("delta couldn't handle: {:?}", vec);
+            println!("delta couldn't handle: {:?}", vals);
             return str_to_abort("delta hit bottom case");
         }
     };
