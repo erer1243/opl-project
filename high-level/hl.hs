@@ -555,6 +555,32 @@ tests = [
                        ["set!", "x", ["+", "x", 1]],
                        ["when", ["even?", "x"], ["continue", "unit"]],
                        ["set!", "y", ["+", "y", 1]]]], JNum 15)
+
+        -- J12 tests
+        , (["and", ["number?", 5], ["not", ["number?", "unit"]]], JBool True)
+        , (["and", ["boolean?", "true"], ["and", ["boolean?", "false"], ["not", ["boolean?", 1]]]], JBool True)
+        , (["and", ["pair?", ["pair", 1, "unit"]], ["not", ["pair?", "false"]]], JBool True)
+        , (["and", ["unit?", "unit"], ["not", ["unit?", 25]]], JBool True)
+        , (["and", ["box?", ["box", 5]], ["not", ["box?", 5]]], JBool True)
+        , (["and", ["inl?", ["inl", 5]], ["not", ["inl?", "+"]]], JBool True)
+        , (["and", ["inr?", ["inr", "unit"]], ["not", ["inr?", "inr"]]], JBool True)
+        , (["and", ["letcc", "k", ["continuation?", "k"]],
+                   ["not", ["continuation?", [λ, ["_"], "unit"]]]], JBool True)
+        , (["and", ["function?", [λ, ["_"], "unit"]], ["not", ["function?", "pair"]]], JBool True)
+        , (["and", ["primitive?", "pair"], ["not", ["primitive?", [λ, ["_"], "unit"]]]], JBool True)
+        , (["and", ["=", ["function-arity", "not"], 1],
+                   ["=", ["function-arity", "reduce"], 3]], JBool True)
+        , (["and", ["=", ["primitive-arity", "pair"], 2],
+                   ["=", ["primitive-arity", "inr"], 3]], JBool True)
+        , (["and", ["procedure?", "inl"],
+                   ["and", ["procedure?", [λ, ["_"], "unit"]],
+                           ["and", ["letcc", "k", ["procedure?", "k"]],
+                                   ["not", ["procedure?", "unit"]]]]], JBool True)
+        , (["and", ["=", ["procedure-arity", "pair"], 2],
+                   ["and", ["=", ["procedure-arity", "reduce"], 3],
+                           ["=", ["letcc", "k", ["procedure-arity", "k"]], 1]]], JBool True)
+        , (["try", ["+", "true", 5], "catch", [λ, ["_"], "unit"]], JUnit)
+        , (["try", ["/", "+", "-"], "catch", [λ, ["_"], 5]], JNum 5)
         ]
 
 -- Convenience functions for j5 stdlib testing
