@@ -175,7 +175,7 @@ impl Cek {
         println!("== {:?}", self.0);
         println!("== {:?}", self.1);
         println!("== {:?}", self.2);
-        println!();
+        println!("Debug print over");
     }
 
     fn is_finished(&self) -> bool {
@@ -335,7 +335,6 @@ fn run_delta_slice(vals: &[JValue]) -> JExpr {
             _ => return str_to_abort("primitive-arity called on non-primitive"),
         }),
         _ => {
-            println!("delta couldn't handle: {:?}", vals);
             return str_to_abort("delta hit bottom case");
         }
     };
@@ -376,6 +375,7 @@ impl Env {
         }
 
         println!("No var {} in environment", var_ref);
+        // println!("Env: {:#?}", self.0.to_vec());
         None
     }
 

@@ -8,6 +8,7 @@ import Data.String (IsString(..))
 import Data.List (intercalate, intersperse)
 import System.Process (spawnCommand, waitForProcess)
 import Control.Monad (forM_)
+-- import Debug.Trace
 
 data JExpr = JVal JValue
            | JApply JExpr [JExpr]
@@ -60,7 +61,7 @@ pp (JVal val) = case val of
     JInl v -> "(inl " ++ pp (JVal v) ++ ")"
     JInr v -> "(inr " ++ pp (JVal v) ++ ")"
     JPair vl vr -> "(pair " ++ pp (JVal vl) ++ " " ++ pp (JVal vr) ++ ")"
-    JString s -> s
+    JString s -> "\"" ++ s ++ "\""
     JStrEq -> "string=?"
     JLambda f xs ebody -> "(λ " ++ f ++ " (" ++ unwords (map (pp . JVarRef) xs) ++ ") " ++ pp ebody
                             ++ ")"
@@ -102,17 +103,16 @@ desugar (SEList l) = case l of
     [SESym "+"] -> JVal $ JNum 0
     [SESym "*"] -> JVal $ JNum 1
     -- +/* recursive cases
-    (plus@(SESym "+"):n:rest) -> JApply (JVal JPlus) [desugar n,
-                                                      desugar $ SEList $ plus : rest]
-    (mult@(SESym "*"):n:rest) -> JApply (JVal JMult) [desugar n,
-                                                      desugar $ SEList $ mult : rest]
+    (plus@(SESym "+"):n:rest) -> JApply (JVarRef "+") [desugar n,
+                                                       desugar $ SEList $ plus : rest]
+    (mult@(SESym "*"):n:rest) -> JApply (JVarRef "*") [desugar n,
+                                                       desugar $ SEList $ mult : rest]
     -- negation
-    [SESym "-", e] -> JApply (JVal JMult) [JVal (JNum (-1)), desugar e]
+    [SESym "-", e] -> desugar ["*", -1, e]
     -- conditional
     [SESym "if", ec, et, ef] -> JIf (desugar ec) (desugar et) (desugar ef)
     -- lambda
     [SESym "lambda", SESym f, SEList xs, ebody] -> JVal $ JLambda f (map unwrapSESym xs)
-                                                                    -- (desugar ebody)
                                                                     (desugar ["letcc", "return", ebody])
     -- lambda with default recursive name
     [SESym "lambda", SEList xs, ebody] -> desugar ["lambda", "rec", SEList xs, ebody]
@@ -181,21 +181,32 @@ desugar (SEList l) = case l of
     [SESym "letcc", SESym k, e] -> JCallCC $ JVal $ JLambda "_" [k] (desugar e)
     -- try/catch form
     [SESym "try", eb, "catch", ec] -> desugar ["trycatch*", [λ, [], eb], ec]
-    -- general apply
+    -- unsafe apply
     (sym:args) -> JApply (desugar sym) (map desugar args)
+    -- (SESym "unsafe-apply":sym:args) -> JApply (desugar sym) (map desugar args)
+    -- -- safe apply
+    -- apply@(proc:args) -> desugar ["if", ["unsafe-apply", "procedure?", proc],
+    --                                     ["if", ["unsafe-apply",
+    --                                             "=", ["unsafe-apply",
+    --                                                   "procedure-arity",
+    --                                                   proc,
+    --                                                   SENum (fromIntegral $ length args)]],
+    --                                            SEList ("unsafe-apply" : apply),
+    --                                            ["unsafe-apply", "throw", "#apply with wrong number of args"]],
+    --                                     ["unsafe-apply", "throw", "#apply on non-procedure"]]
     -- Error case
     _ -> error $ "bad SEList " ++ show l
 desugar (SESym s) = case s of
     -- Builtins
-    "+" -> JVal JPlus
-    "-" -> JVal JMinus
-    "*" -> JVal JMult
-    "/" -> JVal JDiv
-    "=" -> JVal JEq
-    "<" -> JVal JLt
-    ">" -> JVal JGt
-    "<=" -> JVal JLtEq
-    ">=" -> JVal JGtEq
+    "unsafe-+" -> JVal JPlus
+    "unsafe--" -> JVal JMinus
+    "unsafe-*" -> JVal JMult
+    "unsafe-/" -> JVal JDiv
+    "unsafe-=" -> JVal JEq
+    "unsafe-<" -> JVal JLt
+    "unsafe->" -> JVal JGt
+    "unsafe-<=" -> JVal JLtEq
+    "unsafe->=" -> JVal JGtEq
     "true" -> JVal $ JBool True
     "false" -> JVal $ JBool False
     "inl" -> JVal JInlOp
@@ -206,7 +217,7 @@ desugar (SESym s) = case s of
     "snd" -> JVal JSnd
     "string=?" -> JVal JStrEq
     "box" -> JVal JBox
-    "unbox" -> JVal JUnbox
+    "unsafe-unbox" -> JVal JUnbox
     "set-box!" -> JVal JSetBox
     "number?" -> JVal JNumberQ
     "boolean?" -> JVal JBooleanQ
@@ -220,6 +231,8 @@ desugar (SESym s) = case s of
     "primitive?" -> JVal JPrimitiveQ
     "function-arity" -> JVal JFunctionArity
     "primitive-arity" -> JVal JPrimitiveArity
+    -- Starting with # -> string
+    ('#':s) -> JVal $ JString s
     -- Anything else -> var ref
     _ -> JVarRef s
 
@@ -293,7 +306,7 @@ tests :: [(SExpr, JValue)]
 tests = [
           -- Basic functionality tests
           (1, JNum 1)
-        , ("<=", JLtEq)
+        , ("unsafe-<=", JLtEq)
         , ([["lambda", [], 1]], JNum 1)
         , (["let", [], ["-", 25]], JNum (-25))
         , (["let", ["x", 1], "x"], JNum 1)
@@ -313,7 +326,7 @@ tests = [
         , (["let*", ["x", 5, "x", 10], "x"], JNum 10)
         , (["let", ["x", 10, "f", ["lambda", ["x"], "x"]], ["+", "x", ["f", 5]]], JNum 15)
 
-        -- Testing of closing over variables !!!!TODO!!!!!
+        -- Testing of closing over variables
         , (["let", ["curriedMult", ["lambda", ["x"], ["lambda", ["y"], ["*", "x", "y"]]]],
                    ["let",  ["mult5", ["curriedMult", 5],
                              "mult10", ["curriedMult", 10]],
@@ -336,7 +349,7 @@ tests = [
         -- J4 tests
         , ([[λ, ["n"], ["if", ["=", "n", 0], 1, ["*", "n", ["rec", ["-", "n", 1]]]]], 6], JNum 720) -- 6!
         , (["let", ["useless-recurse", [λ, ["n"], ["if", ["=", "n", 0], 123, ["rec", ["-", "n", 1]]]]],
-              ["useless-recurse", 100000]], JNum 123) -- Recurse 100000 times to show it works
+              ["useless-recurse", 10000]], JNum 123) -- Recurse 10000 times to show it works
         , (["let", ["sumN", [λ, ["n"], ["if", ["=", "n", 0], 0, ["+", "n", ["rec", ["-", "n", 1]]]]]],
               ["sumN", 5]], JNum 15) -- 0+1+2+3+4+5
         , (["let", ["fac", [λ, "fac", ["n"], ["if", ["=", "n", 0], 1, ["*", "n", ["fac", ["-", "n", 1]]]]]],
@@ -363,8 +376,8 @@ tests = [
         -- J5 raw extension tests
         , ("unit", JUnit)
         , (["inr", 5], JInr (JNum 5))
-        , (["pair", ["inl", ["pair", ">", "<"]], "false"], JPair (JInl (JPair JGt JLt)) (JBool False))
-        , (["case", ["inl", "unit"], ["_", "<"], ["_", ">"]], JLt)
+        , (["pair", ["inl", ["pair", "unit", "unit"]], "false"], JPair (JInl (JPair JUnit JUnit)) (JBool False))
+        , (["case", ["inl", "unit"], ["_", "box?"], ["_", "number?"]], JBoxQ)
         , (["case", ["inl", 5], ["l", ["+", "l", 10]], ["r", "false"]], JNum 15)
         , (["fst", ["pair", 5, "true"]], JNum 5)
         , (["snd", ["pair", 5, "true"]], JBool True)
@@ -605,8 +618,8 @@ tests = [
         , (["and", ["=", ["procedure-arity", "pair"], 2],
                    ["and", ["=", ["procedure-arity", "reduce"], 3],
                            ["=", ["letcc", "k", ["procedure-arity", "k"]], 1]]], JBool True)
-        -- , (["try", ["+", "true", 5], "catch", [λ, ["_"], "unit"]], JUnit)
-        -- , (["try", ["/", "+", "-"], "catch", [λ, ["_"], 5]], JNum 5)
+        , (["try", ["+", "true", 5], "catch", [λ, ["_"], "unit"]], JUnit)
+        , (["try", ["/", "+", "-"], "catch", [λ, ["_"], 5]], JNum 5)
         ]
 
 -- Convenience functions for j5 stdlib testing
@@ -626,9 +639,49 @@ listToSe = foldr (\n e -> ["cons", SENum n, e]) "empty"
 addStdlibToSE :: SExpr -> SExpr
 addStdlibToSE se = ["let*", stdlib, se]
   where
-    stdlib = [ "nat-unfold", [λ, "nat-unfold", ["f", "z", "n"],
+    stdlib = [
+             -- Misc standard library functions I added
+               "or", [λ, ["a", "b"], ["if", "a", "true", "b"]]
+             , "and", [λ, ["a", "b"], ["if", "a", "b", "false"]]
+             , "not", [λ, ["b"], ["if", "b", "false", "true"]]
+             , "id", [λ, ["x"], "x"]
+             , "is-just?", [λ, ["o"], ["case", "o", ["_", "false"], ["_", "true"]]]
+             , "is-nothing?", [λ, ["o"], ["not", ["is-just?", "o"]]]
+              -- J12 safe operations
+             ,"+",  [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
+                                            ["unsafe-+", "x", "y"],
+                                            ["throw", "#+ given non-numbers"]]]
+             , "-",  [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
+                                            ["unsafe--", "x", "y"],
+                                            ["throw", "#- given non-numbers"]]]
+             , "*",  [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
+                                            ["unsafe-*", "x", "y"],
+                                            ["throw", "#* given non-numbers"]]]
+             , "/",  [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
+                                            ["unsafe-/", "x", "y"],
+                                            ["throw", "#/ given non-numbers"]]]
+             , "=",  [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
+                                            ["unsafe-=", "x", "y"],
+                                            ["throw", "#= given non-numbers"]]]
+             , "<",  [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
+                                            ["unsafe-<", "x", "y"],
+                                            ["throw", "#< given non-numbers"]]]
+             , ">",  [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
+                                            ["unsafe->", "x", "y"],
+                                            ["throw", "#> given non-numbers"]]]
+             , "<=",  [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
+                                             ["unsafe-<=", "x", "y"],
+                                             ["throw", "#<= given non-numbers"]]]
+             , ">=",  [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
+                                             ["unsafe->=", "x", "y"],
+                                             ["throw", "#>= given non-numbers"]]]
+             , "unbox",  [λ, ["b"], ["if", ["box?", "b"],
+                                           ["unsafe-unbox", "b"],
+                                           ["throw", "#unbox given non-box"]]]
+             -- nat-unfold
+             , "nat-unfold", [λ, "nat-unf", ["f", "z", "n"],
                                  ["if", ["=", "n", 0],
-                                     "z", ["f", "n", ["nat-unfold", "f", "z", ["-", "n", 1]]]]]
+                                     "z", ["f", "n", ["nat-unf", "f", "z", ["-", "n", 1]]]]]
              -- Standard library functions from lecture 9
              , "empty", ["inl", "unit"]
              , "cons", [λ, ["data", "rest"], ["inr", ["pair", "data", "rest"]]]
@@ -655,15 +708,8 @@ addStdlibToSE se = ["let*", stdlib, se]
              , "append", [λ, ["x", "y"], ["case", "x", ["_", "y"],
                                                        ["p", ["cons", ["fst", "p"],
                                                                       ["rec", ["snd", "p"], "y"]]]]]
-             , "nothing", "empty"
+             , "nothing", ["inl", "unit"]
              , "just", "inr"
-             -- Other standard library functions I added
-             , "or", [λ, ["a", "b"], ["if", "a", "true", "b"]]
-             , "and", [λ, ["a", "b"], ["if", "a", "b", "false"]]
-             , "not", [λ, ["b"], ["if", "b", "false", "true"]]
-             , "id", [λ, ["x"], "x"]
-             , "is-just?", [λ, ["o"], ["case", "o", ["_", "false"], ["_", "true"]]]
-             , "is-nothing?", [λ, ["o"], ["not", ["is-just?", "o"]]]
              -- J10 stdlib additions
              , "last-handler", ["box", [λ, ["x"], ["abort", "x"]]]
              , "throw", [λ, ["v"], [["unbox", "last-handler"], "v"]]
@@ -678,6 +724,7 @@ addStdlibToSE se = ["let*", stdlib, se]
                                                            ["here", ["newh", "x"]]]]],
                                                 ["begin0", ["body"],
                                                            ["set-box!", "last-handler", "oldh"]]]]]]
+             -- J12 procedure safety
              , "procedure?", [λ, ["x"], ["or", ["function?", "x"],
                                                ["or", ["primitive?", "x"],
                                                       ["continuation?", "x"]]]]
@@ -825,7 +872,7 @@ runTestInLL (se, ans) = do
                 , "if val == ans {"
                 , "println!(\"{}\", ansi_term::Colour::Green.paint(\"Success\"));"
                 , "} else {"
-                , "panic!(\"{}\", ansi_term::Colour::Red.paint(\"!!! Test Failure !!!\"));"
+                , "println!(\"{}\", ansi_term::Colour::Red.paint(\"Failure !!!!!!!!!\"));"
                 , "}"
                 , "}"
                 ]
@@ -838,8 +885,8 @@ runCommand :: String -> IO ()
 runCommand s = spawnCommand s >>= waitForProcess >> return ()
 
 main :: IO ()
-main = forM_ (drop 100 tests) runTestInLL
--- main = forM_ tests runTestInLL
+-- main = forM_ (drop 100 tests) runTestInLL
+main = forM_ tests runTestInLL
 
 -- Enable conversion from number literals into SENum
 -- Only fromInteger and negate are needed so the rest is left undefined
