@@ -103,10 +103,8 @@ desugar (SEList l) = case l of
     [SESym "+"] -> JVal $ JNum 0
     [SESym "*"] -> JVal $ JNum 1
     -- +/* recursive cases
-    (plus@(SESym "+"):n:rest) -> JApply (JVarRef "+") [desugar n,
-                                                       desugar $ SEList $ plus : rest]
-    (mult@(SESym "*"):n:rest) -> JApply (JVarRef "*") [desugar n,
-                                                       desugar $ SEList $ mult : rest]
+    (plus@(SESym "+"):n:rest) -> JApply (JVarRef "+") [desugar n, desugar $ SEList $ plus : rest]
+    (mult@(SESym "*"):n:rest) -> JApply (JVarRef "*") [desugar n, desugar $ SEList $ mult : rest]
     -- negation
     [SESym "-", e] -> desugar ["*", -1, e]
     -- conditional
@@ -182,15 +180,18 @@ desugar (SEList l) = case l of
     -- try/catch form
     [SESym "try", eb, "catch", ec] -> desugar ["trycatch*", [λ, [], eb], ec]
     -- unsafe apply
-    (sym:args) -> JApply (desugar sym) (map desugar args)
-    -- (SESym "unsafe-apply":sym:args) -> JApply (desugar sym) (map desugar args)
+    -- (sym:args) -> JApply (desugar sym) (map desugar args)
+    (SESym "unsafe-apply":sym:args) -> JApply (desugar sym) (map desugar args)
     -- -- safe apply
+    apply@(proc:args) -> desugar ["begin", ["unsafe-apply",
+                                            "assert-safe-call", proc, SENum (fromIntegral $ length args)],
+                                           SEList ("unsafe-apply" : apply)]
     -- apply@(proc:args) -> desugar ["if", ["unsafe-apply", "procedure?", proc],
     --                                     ["if", ["unsafe-apply",
-    --                                             "=", ["unsafe-apply",
-    --                                                   "procedure-arity",
-    --                                                   proc,
-    --                                                   SENum (fromIntegral $ length args)]],
+    --                                             "unsafe-=", ["unsafe-apply",
+    --                                                          "procedure-arity",
+    --                                                          proc],
+    --                                                  SENum (fromIntegral $ length args)],
     --                                            SEList ("unsafe-apply" : apply),
     --                                            ["unsafe-apply", "throw", "#apply with wrong number of args"]],
     --                                     ["unsafe-apply", "throw", "#apply on non-procedure"]]
@@ -349,7 +350,7 @@ tests = [
         -- J4 tests
         , ([[λ, ["n"], ["if", ["=", "n", 0], 1, ["*", "n", ["rec", ["-", "n", 1]]]]], 6], JNum 720) -- 6!
         , (["let", ["useless-recurse", [λ, ["n"], ["if", ["=", "n", 0], 123, ["rec", ["-", "n", 1]]]]],
-              ["useless-recurse", 10000]], JNum 123) -- Recurse 10000 times to show it works
+              ["useless-recurse", 1000]], JNum 123) -- Recurse 10000 times to show it works
         , (["let", ["sumN", [λ, ["n"], ["if", ["=", "n", 0], 0, ["+", "n", ["rec", ["-", "n", 1]]]]]],
               ["sumN", 5]], JNum 15) -- 0+1+2+3+4+5
         , (["let", ["fac", [λ, "fac", ["n"], ["if", ["=", "n", 0], 1, ["*", "n", ["fac", ["-", "n", 1]]]]]],
@@ -565,7 +566,7 @@ tests = [
                    ["and", ["is-nothing?", ["div-maybe", 20, 0]],
                            ["is-just?", ["div-maybe", 20, 1]]]], JBool True)
         , ("a", JString "missing var in env")
-        , ([1, 2], JString "delta hit bottom case")
+        , ([1, 2], JString "apply on non-procedure")
         , (["/", 1, 0], JString "divide by zero")
 
         -- J10 tests
@@ -645,10 +646,25 @@ addStdlibToSE se = ["let*", stdlib, se]
              , "and", [λ, ["a", "b"], ["if", "a", "b", "false"]]
              , "not", [λ, ["b"], ["if", "b", "false", "true"]]
              , "id", [λ, ["x"], "x"]
-             , "is-just?", [λ, ["o"], ["case", "o", ["_", "false"], ["_", "true"]]]
-             , "is-nothing?", [λ, ["o"], ["not", ["is-just?", "o"]]]
-              -- J12 safe operations
-             ,"+",  [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
+             -- J12 safe operations
+             , "procedure?", [λ, ["x"], ["unsafe-apply", "or", ["unsafe-apply", "function?", "x"],
+                                               ["unsafe-apply", "or", ["unsafe-apply", "primitive?", "x"],
+                                                      ["unsafe-apply", "continuation?", "x"]]]]
+             , "procedure-arity", [λ, ["x"], ["if", ["unsafe-apply", "function?", "x"],
+                                                     ["unsafe-apply", "function-arity", "x"],
+                                                     ["if", ["unsafe-apply", "primitive?", "x"],
+                                                            ["unsafe-apply", "primitive-arity", "x"],
+                                                            ["if", ["unsafe-apply", "continuation?", "x"],
+                                                                   1,
+                                                                   ["unsafe-apply", "abort", "#procedure-arity called on non-procedure"]]]]]
+             , "last-handler", ["unsafe-apply", "box", [λ, ["x"], ["abort", "x"]]]
+             , "throw", [λ, ["v"], ["unsafe-apply", ["unsafe-apply", "unsafe-unbox", "last-handler"], "v"]]
+             , "assert-safe-call", [λ, ["p", "ac"], ["if", ["unsafe-apply", "procedure?", "p"],
+                                                           ["if", ["unsafe-apply", "unsafe-=", ["unsafe-apply", "procedure-arity", "p"], "ac"],
+                                                                  "unit",
+                                                                  ["unsafe-apply", "throw", "#apply with wrong # args"]],
+                                                           ["unsafe-apply", "throw", "#apply on non-procedure"]]]
+             , "+",  [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
                                             ["unsafe-+", "x", "y"],
                                             ["throw", "#+ given non-numbers"]]]
              , "-",  [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
@@ -678,6 +694,7 @@ addStdlibToSE se = ["let*", stdlib, se]
              , "unbox",  [λ, ["b"], ["if", ["box?", "b"],
                                            ["unsafe-unbox", "b"],
                                            ["throw", "#unbox given non-box"]]]
+
              -- nat-unfold
              , "nat-unfold", [λ, "nat-unf", ["f", "z", "n"],
                                  ["if", ["=", "n", 0],
@@ -710,9 +727,11 @@ addStdlibToSE se = ["let*", stdlib, se]
                                                                       ["rec", ["snd", "p"], "y"]]]]]
              , "nothing", ["inl", "unit"]
              , "just", "inr"
+             , "is-just?", [λ, ["o"], ["case", "o", ["_", "false"], ["_", "true"]]]
+             , "is-nothing?", [λ, ["o"], ["not", ["is-just?", "o"]]]
              -- J10 stdlib additions
-             , "last-handler", ["box", [λ, ["x"], ["abort", "x"]]]
-             , "throw", [λ, ["v"], [["unbox", "last-handler"], "v"]]
+             -- , "last-handler", ["box", [λ, ["x"], ["abort", "x"]]]
+             -- , "throw", [λ, ["v"], [["unbox", "last-handler"], "v"]]
              , "trycatch*", [λ, ["body", "newh"],
                                 ["let", ["oldh", ["unbox", "last-handler"]],
                                         ["letcc", "here",
@@ -724,15 +743,6 @@ addStdlibToSE se = ["let*", stdlib, se]
                                                            ["here", ["newh", "x"]]]]],
                                                 ["begin0", ["body"],
                                                            ["set-box!", "last-handler", "oldh"]]]]]]
-             -- J12 procedure safety
-             , "procedure?", [λ, ["x"], ["or", ["function?", "x"],
-                                               ["or", ["primitive?", "x"],
-                                                      ["continuation?", "x"]]]]
-             , "procedure-arity", [λ, ["x"], ["if", ["function?", "x"],
-                                                     ["function-arity", "x"],
-                                                     ["if", ["primitive?", "x"],
-                                                            ["primitive-arity", "x"],
-                                                            1]]]
              ]
 
 -- Takes an sexpr and puts it into the task 35
@@ -855,9 +865,13 @@ runTestInLL (se, ans) = do
     let jeLL = jeToLL je
     let ansLL = jvToLL ans
 
+    -- Exclude standard library from test print
+    let printSe = pp $ desugarTop se
+    let printExpr = if length printSe > 180 then take 180 printSe ++ "..<cut>" else printSe
+
     -- Print message
     putStrLn "========================="
-    putStrLn $ "expr=" ++ pp (desugarTop se) -- Exclude standard library from test print
+    putStrLn $ "expr=" ++ printExpr
     putStrLn $ "expecting=" ++ show ans
 
     -- Write the source to the generated code file

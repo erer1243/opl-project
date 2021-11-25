@@ -223,7 +223,9 @@ impl Cek {
 
             // 13-3 rule 3 apply on JCont
             // has to come before regular apply rule
-            (JVal(v_), KApp(v, _, _, _)) if v.head().map(JValue::is_j_cont).unwrap_or(false) => {
+            (JVal(v_), KApp(v, _, _, _))
+                if v.head().map(JValue::is_j_cont).unwrap_or(false) && v.len() == 1 =>
+            {
                 let kp = v.head().unwrap().unwrap_j_cont();
                 Cek(jval(v_), Env::EMPTY, kp)
             }
@@ -328,15 +330,14 @@ fn run_delta_slice(vals: &[JValue]) -> JExpr {
         }
         [JFunctionArity, JClosure(_, params, _, _)] => JNum(params.len() as i32),
         [JPrimitiveArity, x] => JNum(match x {
-            JPlus | JMinus | JMult | JDiv | JLtEq | JLt | JEq | JGt | JGtEq | JPairOp | JStrEq => 2,
-            JInlOp | JInrOp | JFst | JSnd | JBox | JUnbox | JSetBox | JNumberQ | JBoxQ
-            | JBooleanQ | JPairQ | JUnitQ | JInlQ | JInrQ | JContinuationQ | JFunctionQ
-            | JPrimitiveQ | JFunctionArity | JPrimitiveArity => 1,
+            JPlus | JMinus | JMult | JDiv | JLtEq | JLt | JEq | JGt | JGtEq | JPairOp | JStrEq
+            | JSetBox => 2,
+            JInlOp | JInrOp | JFst | JSnd | JBox | JUnbox | JNumberQ | JBoxQ | JBooleanQ
+            | JPairQ | JUnitQ | JInlQ | JInrQ | JContinuationQ | JFunctionQ | JPrimitiveQ
+            | JFunctionArity | JPrimitiveArity => 1,
             _ => return str_to_abort("primitive-arity called on non-primitive"),
         }),
-        _ => {
-            return str_to_abort("delta hit bottom case");
-        }
+        _ => return str_to_abort("delta hit bottom case"),
     };
 
     jval(v)
