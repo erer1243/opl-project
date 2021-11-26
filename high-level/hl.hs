@@ -610,6 +610,13 @@ tests = [
                            ["=", ["letcc", "k", ["procedure-arity", "k"]], 1]]], JBool True)
         , (["try", ["+", "true", 5], "catch", [λ, ["_"], "unit"]], JUnit)
         , (["try", ["/", "+", "-"], "catch", [λ, ["_"], 5]], JNum 5)
+
+        -- Obscene memory usage program
+        , (["let", ["gen-pairs", [λ, ["n"], ["if", ["=", "n", 0],
+                                                   "unit",
+                                                   ["pair", ["rec", ["-", "n", 1]],
+                                                            ["rec", ["-", "n", 1]]]]]],
+                   ["begin", ["gen-pairs", 1000], "unit"]], JUnit)
         ]
 
 -- Convenience functions for j5 stdlib testing
@@ -886,8 +893,8 @@ runCommand :: String -> IO ()
 runCommand s = spawnCommand s >>= waitForProcess >> return ()
 
 main :: IO ()
--- main = forM_ (drop 100 tests) runTestInLL
-main = forM_ tests runTestInLL
+main = forM_ (drop 120 tests) runTestInLL
+-- main = forM_ tests runTestInLL
 
 -- Enable conversion from number literals into SENum
 -- Only fromInteger and negate are needed so the rest is left undefined

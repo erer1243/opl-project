@@ -11,4 +11,4 @@ clean:
 
 test: hl
 	../low-level/target_ramdisk.sh
-	./hl
+	systemd-run --user --scope -p MemoryMax=1500M -p MemorySwapMax=0 ./hl
