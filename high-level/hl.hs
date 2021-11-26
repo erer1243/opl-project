@@ -8,7 +8,6 @@ import Data.String (IsString(..))
 import Data.List (intercalate, intersperse)
 import System.Process (spawnCommand, waitForProcess)
 import Control.Monad (forM_)
--- import Debug.Trace
 
 data JExpr = JVal JValue
            | JApply JExpr [JExpr]
@@ -180,21 +179,11 @@ desugar (SEList l) = case l of
     -- try/catch form
     [SESym "try", eb, "catch", ec] -> desugar ["trycatch*", [λ, [], eb], ec]
     -- unsafe apply
-    -- (sym:args) -> JApply (desugar sym) (map desugar args)
     (SESym "unsafe-apply":sym:args) -> JApply (desugar sym) (map desugar args)
     -- -- safe apply
     apply@(proc:args) -> desugar ["begin", ["unsafe-apply",
                                             "assert-safe-call", proc, SENum (fromIntegral $ length args)],
                                            SEList ("unsafe-apply" : apply)]
-    -- apply@(proc:args) -> desugar ["if", ["unsafe-apply", "procedure?", proc],
-    --                                     ["if", ["unsafe-apply",
-    --                                             "unsafe-=", ["unsafe-apply",
-    --                                                          "procedure-arity",
-    --                                                          proc],
-    --                                                  SENum (fromIntegral $ length args)],
-    --                                            SEList ("unsafe-apply" : apply),
-    --                                            ["unsafe-apply", "throw", "#apply with wrong number of args"]],
-    --                                     ["unsafe-apply", "throw", "#apply on non-procedure"]]
     -- Error case
     _ -> error $ "bad SEList " ++ show l
 desugar (SESym s) = case s of
@@ -730,8 +719,6 @@ addStdlibToSE se = ["let*", stdlib, se]
              , "is-just?", [λ, ["o"], ["case", "o", ["_", "false"], ["_", "true"]]]
              , "is-nothing?", [λ, ["o"], ["not", ["is-just?", "o"]]]
              -- J10 stdlib additions
-             -- , "last-handler", ["box", [λ, ["x"], ["abort", "x"]]]
-             -- , "throw", [λ, ["v"], [["unbox", "last-handler"], "v"]]
              , "trycatch*", [λ, ["body", "newh"],
                                 ["let", ["oldh", ["unbox", "last-handler"]],
                                         ["letcc", "here",
