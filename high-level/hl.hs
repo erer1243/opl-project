@@ -506,12 +506,12 @@ tests = [
                               ["mutual-rec1", 1]]], JNum 1000)
         -- Mutual recursion tests from j2
         , (["letrec", ["recurse1", [λ, ["x"], ["recurse2", ["+", "x", 1]]],
-                       "recurse2", [λ, ["x"], ["if", [">", "x", 10000], "x", ["recurse1", "x"]]]],
-                      ["recurse1", 0]], JNum 10001)
+                       "recurse2", [λ, ["x"], ["if", [">", "x", 1000], "x", ["recurse1", "x"]]]],
+                      ["recurse1", 0]], JNum 1001)
         , (["letrec", ["recurse1", [λ, ["x"], ["recurse2", ["+", "x", 2]]],
                        "recurse2", [λ, ["x"], ["recurse3", ["-", "x", 1]]],
-                       "recurse3", [λ, ["x"], ["if", [">", "x", 10000], "x", ["recurse1", "x"]]]],
-                      ["recurse1", 0]], JNum 10001)
+                       "recurse3", [λ, ["x"], ["if", [">", "x", 1000], "x", ["recurse1", "x"]]]],
+                      ["recurse1", 0]], JNum 1001)
         , (["letrec", ["collatz-highest", [λ, ["x", "h"], ["if", ["even?", "x"],
                                                               ["eq1", ["/", "x", 2], "h"],
                                                               ["eq1", ["+", 1, ["*", "x", 3]], "h"]]],
@@ -614,8 +614,8 @@ tests = [
         -- Obscene memory usage program
         , (["let", ["gen-pairs", [λ, ["n"], ["if", ["=", "n", 0],
                                                    "unit",
-                                                   ["pair", ["rec", ["-", "n", 1]],
-                                                            ["rec", ["-", "n", 1]]]]]],
+                                                   ["begin", ["pair", "n", "n"],
+                                                             ["rec", ["-", "n", 1]]]]]],
                    ["begin", ["gen-pairs", 1000], "unit"]], JUnit)
         ]
 
@@ -639,7 +639,7 @@ addStdlibToSE se = ["let*", stdlib, se]
     stdlib = [
              -- Misc standard library functions I added
                "or", [λ, ["a", "b"], ["if", "a", "true", "b"]]
-             , "and", [λ, ["a", "b"], ["if", "a", "b", "false"]]
+             , "and", [λ, ["b1", "b2"], ["if", "b1", "b2", "false"]]
              , "not", [λ, ["b"], ["if", "b", "false", "true"]]
              , "id", [λ, ["x"], "x"]
              -- J12 safe operations
@@ -786,7 +786,7 @@ task35Test ebody =
 jeToLL :: JExpr -> String
 jeToLL (JVal v) = "jval(" ++ jvToLL v ++ ")"
 jeToLL (JIf ec et ef) = "jif(" ++ commaSep (map jeToLL [ec, et, ef]) ++ ")"
-jeToLL (JApply p args) = "japply(" ++ jeToLL p ++ "," ++ listToLL (map jeToLL args) ++ ")"
+jeToLL (JApply p args) = "japply(" ++ jeToLL p ++ "," ++ jeListToLL (map jeToLL args) ++ ")"
 jeToLL (JVarRef s) = "jvarref(" ++ strToLL s ++ ")"
 jeToLL (JCase e (xl, el) (xr, er)) = "jcase(" ++ jeToLL e
                                               ++ ", (" ++ commaSep [strToLL xl, jeToLL el] ++ ")"
@@ -810,19 +810,19 @@ jvToLL v = "JValue::" ++ case v of
     JGt -> "JGt"
     JGtEq -> "JGtEq"
     JLambda f xs ebody ->
-        "JLambda(" ++ commaSep [strToLL f, listToLL (map strToLL xs), jeToLL ebody] ++ ")"
+        "JLambda(" ++ commaSep [strToLL f, jvrListToLL (map strToLL xs), jeToLL ebody] ++ ")"
     JUnit -> "JUnit"
     JInrOp -> "JInrOp"
     JInlOp -> "JInlOp"
     JPairOp -> "JPairOp"
     JFst -> "JFst"
     JSnd -> "JSnd"
-    JInl v -> "JInl(" ++ leakWrap (jvToLL v) ++ ")"
-    JInr v -> "JInr(" ++ leakWrap (jvToLL v) ++ ")"
-    JPair l r -> "JPair(" ++ commaSep (map (leakWrap . jvToLL) [l, r]) ++ ")"
+    JInl v -> "JInl(" ++ gcWrap (jvToLL v) ++ ")"
+    JInr v -> "JInr(" ++ gcWrap (jvToLL v) ++ ")"
+    JPair l r -> "JPair(" ++ commaSep (map (gcWrap . jvToLL) [l, r]) ++ ")"
     JString s -> "JString(" ++ strToLL s ++ ")"
     JStrEq -> "JStrEq"
-    JSigma v -> "JSigma(" ++ leakWrap (jvToLL v) ++ ")"
+    JSigma v -> "JSigma(" ++ gcWrap (jvToLL v) ++ ")"
     JBox -> "JBox"
     JUnbox -> "JUnbox"
     JSetBox -> "JSetBox"
@@ -842,19 +842,26 @@ jvToLL v = "JValue::" ++ case v of
 commaSep :: [String] -> String
 commaSep  = intercalate ", "
 
-listToLL :: [String] -> String
-listToLL strs = "List::from([" ++ commaSep strs ++ "])"
+jeListToLL :: [String] -> String
+jeListToLL strs = "jexprs_to_gclist(&[" ++ commaSep strs ++ "])"
+
+jvrListToLL :: [String] -> String
+jvrListToLL strs = "jvarrefs_to_gclist(&[" ++ commaSep strs ++ "])"
+
+-- listToLL :: [String] -> String
+-- listToLL strs = "List::from([" ++ commaSep strs ++ "])"
 
 strToLL :: String -> String
 strToLL s = "\"" ++ s ++ "\""
 
-leakWrap :: String -> String
-leakWrap s = "Leak::new(" ++ s ++ ")"
+gcWrap :: String -> String
+gcWrap s = "jvalue_gc(" ++ s ++ ")"
 
 -- Takes a test and runs it in ll code, printing the result and if it failed
 runTestInLL :: (SExpr, JValue) -> IO ()
 runTestInLL (se, ans) = do
     -- Convert to source code
+    -- let addStdlibToSE = id
     let je = desugarTop $ addStdlibToSE se
     let jeLL = jeToLL je
     let ansLL = jvToLL ans
@@ -882,6 +889,7 @@ runTestInLL (se, ans) = do
                 , "} else {"
                 , "println!(\"{}\", ansi_term::Colour::Red.paint(\"Failure !!!!!!!!!\"));"
                 , "}"
+                , "drop_mm();"
                 , "}"
                 ]
 
@@ -893,8 +901,8 @@ runCommand :: String -> IO ()
 runCommand s = spawnCommand s >>= waitForProcess >> return ()
 
 main :: IO ()
-main = forM_ (drop 120 tests) runTestInLL
--- main = forM_ tests runTestInLL
+-- main = forM_ (drop 120 tests) runTestInLL
+main = forM_ tests runTestInLL
 
 -- Enable conversion from number literals into SENum
 -- Only fromInteger and negate are needed so the rest is left undefined
