@@ -612,11 +612,12 @@ tests = [
         , (["try", ["/", "+", "-"], "catch", [λ, ["_"], 5]], JNum 5)
 
         -- Obscene memory usage program
-        , (["let", ["gen-pairs", [λ, ["n"], ["if", ["=", "n", 0],
-                                                   "unit",
-                                                   ["begin", ["pair", "n", "n"],
-                                                             ["rec", ["-", "n", 1]]]]]],
-                   ["begin", ["gen-pairs", 1000], "unit"]], JUnit)
+        , (["let", ["x", 0], ["while", "true",
+                                       ["set!", "x", ["+", "x", 1]],
+                                       ["let", ["p", ["pair", "x", "x"]],
+                                               ["when", ["=", "x", 10000],
+                                                        ["return", "p"]]]]],
+           JPair (JNum 10000) (JNum 10000))
         ]
 
 -- Convenience functions for j5 stdlib testing
@@ -848,9 +849,6 @@ jeListToLL strs = "jexprs_to_gclist(&[" ++ commaSep strs ++ "])"
 jvrListToLL :: [String] -> String
 jvrListToLL strs = "jvarrefs_to_gclist(&[" ++ commaSep strs ++ "])"
 
--- listToLL :: [String] -> String
--- listToLL strs = "List::from([" ++ commaSep strs ++ "])"
-
 strToLL :: String -> String
 strToLL s = "\"" ++ s ++ "\""
 
@@ -880,8 +878,9 @@ runTestInLL (se, ans) = do
         unlines [ "#[allow(unused_imports)]"
                 , "use ll::*;"
                 , "fn main() {"
-                , "let expr =" ++ jeLL ++ ";"
                 , "let ans =" ++ ansLL ++ ";"
+                , "switch_mm();"
+                , "let expr =" ++ jeLL ++ ";"
                 , "let val = Cek::evaluate(expr);"
                 , "println!(\"answer={:?}\", val);"
                 , "if val == ans {"
@@ -901,7 +900,7 @@ runCommand :: String -> IO ()
 runCommand s = spawnCommand s >>= waitForProcess >> return ()
 
 main :: IO ()
--- main = forM_ (drop 120 tests) runTestInLL
+-- main = forM_ (drop 125 tests) runTestInLL
 main = forM_ tests runTestInLL
 
 -- Enable conversion from number literals into SENum

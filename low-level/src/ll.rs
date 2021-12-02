@@ -1,13 +1,12 @@
-#![allow(dead_code, unused_imports, unused_variables)]
+// #![allow(dead_code, unused_imports, unused_variables)]
 
 // mod util;
 
 use derive_more::{Deref, IsVariant, Unwrap};
 use std::{
-    any::TypeId,
-    cell::{Cell, Ref, RefCell, RefMut},
+    cell::Cell,
+    collections::VecDeque,
     mem::{align_of, size_of},
-    ptr,
 };
 // pub use util::*;
 
@@ -239,16 +238,17 @@ pub fn kret() -> Cont {
 //     cont!(k; KCallCC(k))
 // }
 
-// 5 gb
-const MEM_MANAGER_SIZE: usize = 5_000_000_000;
-
-// 100 mb
-// const MEM_MANAGER_SIZE: usize = 100_000_000;
-
+// const MEM_MANAGER_SIZE: usize = 5_000_000_000;
+const MEM_MANAGER_SIZE: usize = 100_000_000;
 // global stop and copy mem manager
 static mut MEM_MANAGER: Option<MemManager> = None;
 // global Cek state that the mem manager uses for the root set when doing gc
 static mut MM_CEK: Option<Cek> = None;
+
+// answer holder mem manager
+// expected test answer objects go into this so they don't get garbage collected
+// by the normal global memory manager
+static mut PERM_MEM_MANAGER: Option<MemManager> = None;
 
 fn mm() -> &'static mut MemManager {
     unsafe {
@@ -277,10 +277,15 @@ fn mm_cek_follow() {
 }
 
 pub fn drop_mm() {
-    // println!("Dropping MemManager");
     unsafe {
         MM_CEK = None;
         MEM_MANAGER = None;
+    }
+}
+
+pub fn switch_mm() {
+    unsafe {
+        PERM_MEM_MANAGER = MEM_MANAGER.take();
     }
 }
 
@@ -320,6 +325,7 @@ impl Cek {
         use JValue::*;
 
         let Cek(mut cek_c, mut cek_e, mut cek_k) = self;
+        follows!(cek_c cek_e cek_k);
 
         macro_rules! jexpr_ {
             ($($fs:ident)*; $body:ident( $($args:expr),* )) => {
@@ -394,7 +400,7 @@ impl Cek {
 
             // 13-3 rule 3 apply on JCont
             // has to come before regular apply rule
-            (JVal(v), KApp(vs, _, _, _))
+            (JVal(_), KApp(vs, _, _, _))
                 if vs.len() == 1 && vs.head().map(|h| h.is_j_cont()).unwrap_or(false) =>
             {
                 let kp = vs.head().unwrap().unwrap_j_cont();
@@ -554,7 +560,7 @@ fn run_delta_slice(vals: &[JValue]) -> JExpr {
     jexpr!(v; JVal(v))
 }
 
-#[derive(Copy, Clone, Deref, Debug)]
+#[derive(Copy, Clone, Deref, Debug, PartialEq, Eq)]
 pub struct Env(GcList<EnvPair>);
 pub type EnvPair = (JVarRef, Cell<JValue>);
 
@@ -630,47 +636,246 @@ impl Env {
     }
 }
 
-impl PartialEq for Env {
-    fn eq(&self, other: &Self) -> bool {
-        true
-    }
-}
+// impl PartialEq for Env {
+//     fn eq(&self, _other: &Self) -> bool {
+//         true
+//     }
+// }
 
-impl Eq for Env {}
+// impl Eq for Env {}
 
 struct MemManager {
     size: usize,
     mem: Box<[u8]>,
     half: bool,
     free_index: usize,
+    doing_gc: bool,
+
+    mallocs: usize,
 }
 
 impl MemManager {
     fn new(size: usize) -> MemManager {
-        println!("{:.2} gigabytes allocated as gc'd memory", (size as f64 / 1_000_000_000f64));
+        // println!("{:.2} gigabytes allocated as gc'd memory", (size as f64 / 1_000_000_000f64));
+
+        // pad memory with some extra bytes to avoid ub described in std::ptr docs
+        let size = size + 300;
+
         MemManager {
             size,
-            // extra 1kb as lazy solution to unsafety if pointer in malloc points
-            // outside of allocated block
-            mem: vec![0u8; (size * 2) + 1000].into(),
+            mem: vec![0u8; size * 2].into(),
             half: false,
             free_index: 0,
+            doing_gc: false,
+
+            mallocs: 0,
         }
     }
 
     // Run stop and copy gc
     fn gc(&mut self) {
-        println!("MemManager performing gc");
-        let cek = unsafe { MM_CEK.expect("Cannot gc because Cek not running") };
-        // struct ObjToBeUpdated {
-        //     src: *mut (),
-        // }
+        let old_mallocs = self.mallocs;
+        self.mallocs = 0;
 
-        // let mut stk: Vec<ObjToBeUpdated> = Vec::new();
+        if self.doing_gc {
+            panic!("gc during gc, ran out of memory");
+        }
+        self.doing_gc = true;
 
-        // self.half = !self.half;
+        // switch to other buffer
+        self.half = !self.half;
+        self.free_index = 0;
+
+        // to-be-moved queue
+        let mut q: VecDeque<*mut u8> = VecDeque::new();
+
+        // to-be-updated stack
+        let mut new_objs: Vec<*mut u8> = Vec::new();
+
+        // add cek machine to queue
+        let Cek(c, e, k) = unsafe { MM_CEK.expect("Cannot gc because Cek not running") };
+        q.push_back((c.0).0.cast());
+        q.push_back((k.0).0.cast());
+        if let Some(gc) = (e.0).0 {
+            q.push_back(gc.0.cast())
+        }
+
+        // realloc the objects
+        while let Some(ptr) = q.pop_front() {
+            if let Some(new_ptr) = self.realloc_obj(ptr) {
+                MemManager::get_child_ptrs(new_ptr, &mut q);
+                new_objs.push(new_ptr);
+            }
+        }
+
+        // update the objects' fields in place
+        for ptr in new_objs {
+            MemManager::follow_child_ptrs(ptr);
+        }
+
+        // update global cek
         mm_cek_follow();
-        todo!("gc unimplemented")
+        self.doing_gc = false;
+
+        println!(
+            "Performed gc, {} -> {} mallocs, freed {} objects",
+            old_mallocs,
+            self.mallocs,
+            old_mallocs - self.mallocs,
+        );
+    }
+
+    // copy a single object to new memory region during gc
+    fn realloc_obj(&mut self, src: *mut u8) -> Option<*mut u8> {
+        unsafe {
+            let tag = MemManager::obj_tag(src);
+
+            if tag == AllocTag::Forwarding {
+                // Already reallocated, just return forwarded ptr
+                // src.cast::<ForwardingPtr>().read().0
+
+                // already reallocated, return none
+                None
+            } else {
+                // Not reallocated yet, allocate space and setup forwarding ptr
+                let tag_ptr = src.sub(1);
+                let dst = self.malloc(tag).0;
+                src.copy_to(dst, tag.size());
+                tag_ptr.cast::<AllocTag>().write(AllocTag::Forwarding);
+                src.cast::<ForwardingPtr>().write(ForwardingPtr(dst));
+                Some(dst)
+            }
+        }
+    }
+
+    fn follow_child_ptrs(ptr: *mut u8) {
+        unsafe {
+            let tag = MemManager::obj_tag(ptr);
+            match tag {
+                AllocTag::JExpr => {
+                    let ptr = ptr as *mut JExprBody;
+                    let je = &mut *ptr;
+                    match je {
+                        JExprBody::JVal(v) => v.follow(),
+                        JExprBody::JIf(a, b, c) => follows!(a b c),
+                        JExprBody::JApply(a, b) => follows!(a b),
+                        JExprBody::JVarRef(_) => (),
+                        JExprBody::JCase(e, (_, l), (_, r)) => follows!(e l r),
+                        JExprBody::JAbort(e) => e.follow(),
+                        JExprBody::JCallCC(e) => e.follow(),
+                    }
+                }
+                AllocTag::JValue => {
+                    let jv = &mut *(ptr as *mut JValue);
+                    jv.follow();
+                }
+                AllocTag::Cont => match &mut *(ptr as *mut ContBody) {
+                    ContBody::KRet => (),
+                    ContBody::KIf(a, b, c, d) => follows!(a b c d),
+                    ContBody::KApp(a, b, c, d) => follows!(a b c d),
+                    ContBody::KCase(e, (_, l), (_, r), k) => follows!(e l r k),
+                    ContBody::KCallCC(k) => k.follow(),
+                },
+                AllocTag::GcCons => {
+                    let gcc = &mut *(ptr as *mut GcCons<u8>);
+                    follows!(gcc.data GcList(gcc.next));
+                }
+                AllocTag::EnvPair => {
+                    let ep = &mut *(ptr as *mut EnvPair);
+                    follows!(ep.1.get_mut())
+                }
+                AllocTag::JVarRef => (),
+                AllocTag::Forwarding => (),
+            }
+        }
+    }
+
+    fn get_child_ptrs(ptr: *mut u8, vec: &mut VecDeque<*mut u8>) {
+        macro_rules! add {
+            () => {};
+            ($itm:expr, $($rest:tt)*) => {{
+                vec.push_back($itm.0.0 as *mut u8);
+                add!($($rest)*);
+            }};
+            (@$itm:expr, $($rest:tt)*) => {{
+                if !$itm.is_empty() {
+                    vec.push_back($itm.0.unwrap().0.cast());
+                }
+                add!($($rest)*);
+            }};
+        }
+        unsafe {
+            let tag = MemManager::obj_tag(ptr);
+            match tag {
+                AllocTag::JExpr => match ptr.cast::<JExprBody>().read() {
+                    JExprBody::JVal(v) => jvalue_ptrs(v, vec),
+                    JExprBody::JIf(a, b, c) => add!(a, b, c,),
+                    JExprBody::JApply(p, a) => add!(p, @a,),
+                    JExprBody::JVarRef(_) => (),
+                    JExprBody::JCase(e, (_, l), (_, r)) => add!(e, l, r,),
+                    JExprBody::JAbort(e) => add!(e,),
+                    JExprBody::JCallCC(e) => add!(e,),
+                },
+                AllocTag::JValue => jvalue_ptrs(ptr.cast::<JValue>().read(), vec),
+                AllocTag::Cont => match ptr.cast::<ContBody>().read() {
+                    ContBody::KRet => (),
+                    ContBody::KIf(a, b, c, d) => add!(@a.0, b, c, d,),
+                    ContBody::KApp(a, b, c, d) => add!(@a, @b.0, @c, d,),
+                    ContBody::KCase(a, (_, b), (_, c), d) => add!(@a.0, b, c, d,),
+                    ContBody::KCallCC(k) => add!(k,),
+                },
+                AllocTag::GcCons => {
+                    let gcc = ptr.cast::<GcCons<u8>>().read();
+                    let data = (gcc.data,);
+                    let next = GcList(gcc.next);
+                    add!(data, @next,);
+                }
+                AllocTag::EnvPair => {
+                    let pair = ptr.cast::<EnvPair>().read();
+                    jvalue_ptrs(pair.1.get(), vec);
+                }
+                AllocTag::Forwarding => (),
+                AllocTag::JVarRef => (),
+            }
+        }
+
+        fn jvalue_ptrs(jv: JValue, vec: &mut VecDeque<*mut u8>) {
+            use JValue::*;
+            match jv {
+                JLambda(_, xs, e) => {
+                    if !xs.is_empty() {
+                        vec.push_back(xs.0.unwrap().0.cast());
+                    }
+                    vec.push_back(e.0 .0.cast());
+                }
+                JClosure(_, xs, e, env) => {
+                    if !xs.is_empty() {
+                        vec.push_back(xs.0.unwrap().0.cast());
+                    }
+                    vec.push_back(e.0 .0.cast());
+                    if !env.0.is_empty() {
+                        vec.push_back(env.0 .0.unwrap().0.cast());
+                    }
+                }
+                JPair(l, r) => {
+                    vec.push_back(l.0.cast());
+                    vec.push_back(r.0.cast());
+                }
+                JInl(v) => {
+                    vec.push_back(v.0.cast());
+                }
+                JInr(v) => {
+                    vec.push_back(v.0.cast());
+                }
+                JSigma(v) => {
+                    vec.push_back(v.0.cast());
+                }
+                JCont(k) => {
+                    vec.push_back(k.0 .0.cast());
+                }
+                _ => (),
+            }
+        }
     }
 
     // Allocate space for a tag and its associated Cek type
@@ -678,36 +883,27 @@ impl MemManager {
         unsafe {
             // calculate necessary pointers and alignment data
             let free_ptr = self.current_mem().add(self.free_index);
-
             let free_1 = free_ptr.add(1);
             let data_ptr = free_1.add(free_1.align_offset(tag.align()));
-            let tag_ptr = data_ptr.sub(1);
-
-            // let tag_size = size_of::<AllocTag>();
-            // let tag_align = align_of::<AllocTag>();
-            // let tag_offset = free_ptr.align_offset(align_of::<AllocTag>());
-            // let tag_ptr = free_ptr.add(tag_offset);
-            // let after_tag = tag_ptr.add(tag_size);
-
-            // let data_size = tag.size();
-            // let data_align = tag.align();
-            // let data_offset = after_tag.align_offset(data_align);
-            // let data_ptr = after_tag.add(data_offset);
-
+            let tag_ptr = data_ptr.sub(1) as *mut AllocTag;
             let next_free_ptr = data_ptr.add(tag.size());
             let needed_bytes = next_free_ptr as usize - free_ptr as usize;
 
             if self.have_free(needed_bytes) {
+                self.mallocs += 1;
+
                 // mark space as used
                 self.free_index += needed_bytes;
                 // write tag
-                let tag_ptr = tag_ptr as *mut AllocTag;
-                tag_ptr.write(tag);
-                // calculate and return t location
+                *tag_ptr = tag;
+                // return data ptr and say gc didnt happen
                 (data_ptr, false)
             } else {
+                // no space, gc
                 self.gc();
+                // if still no space, we will never have enough
                 assert!(self.have_free(needed_bytes), "MemManager ran out of memory");
+                // malloc again, this time say that gc happened
                 (self.malloc(tag).0, true)
             }
         }
@@ -725,16 +921,20 @@ impl MemManager {
         }
     }
 
-    fn opposite_mem(&mut self) -> *mut u8 {
-        if !self.half {
-            self.mem[0..self.size].as_mut_ptr()
-        } else {
-            self.mem[self.size..2 * self.size].as_mut_ptr()
-        }
-    }
+    // fn opposite_mem(&mut self) -> *mut u8 {
+    //     if !self.half {
+    //         self.mem[0..self.size].as_mut_ptr()
+    //     } else {
+    //         self.mem[self.size..2 * self.size].as_mut_ptr()
+    //     }
+    // }
 
-    fn obj_tag<T>(data: *mut T) -> AllocTag {
-        unsafe { data.cast::<AllocTag>().sub(1).read() }
+    fn obj_tag<T>(ptr: *mut T) -> AllocTag {
+        unsafe {
+            let tag_ptr_p1 = ptr.cast::<AllocTag>();
+            let tag_ptr = tag_ptr_p1.sub(1);
+            *tag_ptr
+        }
     }
 
     fn follow_forwarding_ptr<T>(data: *mut T) -> *mut T {
@@ -743,12 +943,20 @@ impl MemManager {
             _ => data,
         }
     }
+
+    // fn in_range<T>(&mut self, ptr: *mut T) -> bool {
+    //     let start = self.current_mem() as usize;
+    //     let end = start + self.size;
+    //     let ptr = ptr as usize;
+
+    //     ptr < end && ptr > start
+    // }
 }
 
 #[derive(Copy, Clone)]
 struct ForwardingPtr(*mut u8);
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(u8)]
 enum AllocTag {
     Forwarding,
@@ -762,7 +970,7 @@ enum AllocTag {
 
 impl AllocTag {
     fn align(&self) -> usize {
-        match self {
+        let natural_align = match self {
             AllocTag::JExpr => align_of::<JExprBody>(),
             AllocTag::JValue => align_of::<JValue>(),
             AllocTag::Cont => align_of::<ContBody>(),
@@ -770,11 +978,12 @@ impl AllocTag {
             AllocTag::Forwarding => align_of::<ForwardingPtr>(),
             AllocTag::EnvPair => align_of::<EnvPair>(),
             AllocTag::JVarRef => align_of::<JVarRef>(),
-        }
+        };
+        natural_align.max(align_of::<ForwardingPtr>())
     }
 
     fn size(&self) -> usize {
-        match self {
+        let natural_size = match self {
             AllocTag::JExpr => size_of::<JExprBody>(),
             AllocTag::JValue => size_of::<JValue>(),
             AllocTag::Cont => size_of::<ContBody>(),
@@ -782,7 +991,8 @@ impl AllocTag {
             AllocTag::Forwarding => size_of::<ForwardingPtr>(),
             AllocTag::EnvPair => size_of::<EnvPair>(),
             AllocTag::JVarRef => size_of::<JVarRef>(),
-        }
+        };
+        natural_size.max(size_of::<ForwardingPtr>())
     }
 }
 
@@ -790,8 +1000,14 @@ pub struct Gc<T>(*mut T);
 
 impl<T> Gc<T> {
     // takes a forwarding pointer and follows it to its new location
-    fn follow(&mut self) {
-        self.0 = MemManager::follow_forwarding_ptr(self.0);
+    fn follow(&mut self) -> bool {
+        let new_ptr = MemManager::follow_forwarding_ptr(self.0);
+        if std::ptr::eq(new_ptr, self.0) {
+            false
+        } else {
+            self.0 = new_ptr;
+            true
+        }
     }
 
     fn set(&mut self, data: T) {
@@ -825,10 +1041,18 @@ impl JValue {
                 l.follow();
                 r.follow();
             }
-            JInl(v) => v.follow(),
-            JInr(v) => v.follow(),
-            JSigma(v) => v.follow(),
-            JCont(k) => k.follow(),
+            JInl(v) => {
+                v.follow();
+            }
+            JInr(v) => {
+                v.follow();
+            }
+            JSigma(v) => {
+                v.follow();
+            }
+            JCont(k) => {
+                k.follow();
+            }
             JClosure(_, xs, e, env) => {
                 xs.follow();
                 e.follow();
@@ -849,6 +1073,19 @@ impl<T> GcList<T> {
     fn follow(&mut self) {
         if let Some(l) = &mut self.0 {
             l.follow();
+            let gcc = unsafe { &mut *l.0 };
+            gcc.follow();
+        }
+    }
+}
+
+impl<T> GcCons<T> {
+    fn follow(&mut self) {
+        self.data.follow();
+        if let Some(l) = &mut self.next {
+            l.follow();
+            let gcc = unsafe { &mut *l.0 };
+            gcc.follow();
         }
     }
 }
@@ -856,6 +1093,23 @@ impl<T> GcList<T> {
 impl<T> std::ops::Deref for Gc<T> {
     type Target = T;
     fn deref(&self) -> &T {
+        // if !mm().in_range(self.0) {
+        //     println!("Not in range: {:?}", MemManager::obj_tag(self.0));
+        // }
+
+        if MemManager::obj_tag(self.0) == AllocTag::Forwarding {
+            // let p = MemManager::follow_forwarding_ptr(self.0);
+            // println!("{:?}", MemManager::obj_tag(p));
+            // let p = unsafe { &*(p as *mut GcCons<u8>) };
+            // println!("{:?}", MemManager::obj_tag(p.data.0));
+            // panic!();
+
+            unsafe {
+                #[allow(mutable_transmutes)]
+                let gc = std::mem::transmute::<_, &mut Self>(self);
+                gc.follow();
+            }
+        }
         unsafe { &*self.0 }
     }
 }
@@ -972,19 +1226,31 @@ impl<T: std::fmt::Debug> std::fmt::Debug for GcList<T> {
     }
 }
 
-#[test]
-fn list_testing() {
-    let mut lst: GcList<JVarRef> = GcList::EMPTY;
-    for s in ["a", "b", "c", "d", "e"] {
-        let (jvr, _) = mm().malloc(AllocTag::JVarRef);
-        let jvr = jvr as *mut JVarRef;
-        unsafe {
-            ptr::write(jvr, s);
-        }
-        let gc = Gc(jvr);
-        dbg!(gc);
-        lst = lst.cons(gc);
-    }
-    let (h, t) = lst.head_tail().unwrap();
-    assert_eq!(dbg!(dbg!(h).len()), 1);
-}
+// #[test]
+// fn list_testing() {
+//     let mut lst: GcList<JVarRef> = GcList::EMPTY;
+//     for s in ["a", "b", "c", "d", "e"] {
+//         let (jvr, _) = mm().malloc(AllocTag::JVarRef);
+//         let jvr = jvr as *mut JVarRef;
+//         unsafe {
+//             ptr::write(jvr, s);
+//         }
+//         let gc = Gc(jvr);
+//         dbg!(gc);
+//         lst = lst.cons(gc);
+//     }
+//     let (h, t) = lst.head_tail().unwrap();
+//     assert_eq!(dbg!(dbg!(h).len()), 1);
+// }
+
+// #[test]
+// fn gc_test() {
+//     let cek = Cek(
+//         jval(JValue::JPair(jvalue!(; JValue::JNum(1)), jvalue!(; JValue::JNum(2)))),
+//         Env::EMPTY,
+//         kret(),
+//     );
+
+//     set_mm_cek(cek);
+//     mm().gc();
+// }
