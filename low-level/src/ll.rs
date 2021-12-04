@@ -239,7 +239,7 @@ pub fn kret() -> Cont {
 // }
 
 // const MEM_MANAGER_SIZE: usize = 5_000_000_000;
-const MEM_MANAGER_SIZE: usize = 100_000_000;
+const MEM_MANAGER_SIZE: usize = 30_000_000;
 // global stop and copy mem manager
 static mut MEM_MANAGER: Option<MemManager> = None;
 // global Cek state that the mem manager uses for the root set when doing gc
@@ -299,20 +299,12 @@ impl Cek {
         let mut cek = Cek(e, Env::EMPTY, kret());
 
         while !cek.is_finished() {
-            // println!("{:?}", cek.2);
             set_mm_cek(cek);
             cek = cek.step();
         }
 
         cek.0.unwrap_j_val()
     }
-
-    // fn print_debug(&self) {
-    //     println!("== {:?}", self.0);
-    //     println!("== {:?}", self.1);
-    //     println!("== {:?}", self.2);
-    //     println!("Debug print over");
-    // }
 
     fn is_finished(&self) -> bool {
         self.0.is_j_val() && self.2.is_k_ret()
@@ -477,10 +469,7 @@ impl Cek {
                 Cek(e, Env::EMPTY, k)
             }
 
-            _ => {
-                // self.print_debug();
-                Cek(abort_str_!("CEK hit bottom case"), cek_e, cek_k)
-            }
+            _ => Cek(abort_str_!("CEK hit bottom case"), cek_e, cek_k),
         }
     }
 }
@@ -597,11 +586,8 @@ impl Env {
     fn get(self, var_ref: JVarRef) -> Option<JValue> {
         let mut curr = *self;
 
-        // println!("Looking up {}", var_ref);
-
         while let Some((pair, next)) = curr.head_tail() {
             let (x, v) = &*pair;
-            // println!("Checking {}", x.len());
             if *x == var_ref {
                 return Some(v.get());
             }
@@ -609,7 +595,6 @@ impl Env {
         }
 
         println!("No var {} in environment", var_ref);
-        // println!("Env: {:#?}", self.0.to_vec());
         None
     }
 
@@ -636,22 +621,12 @@ impl Env {
     }
 }
 
-// impl PartialEq for Env {
-//     fn eq(&self, _other: &Self) -> bool {
-//         true
-//     }
-// }
-
-// impl Eq for Env {}
-
 struct MemManager {
     size: usize,
     mem: Box<[u8]>,
     half: bool,
     free_index: usize,
     doing_gc: bool,
-
-    mallocs: usize,
 }
 
 impl MemManager {
@@ -667,24 +642,20 @@ impl MemManager {
             half: false,
             free_index: 0,
             doing_gc: false,
-
-            mallocs: 0,
         }
     }
 
     // Run stop and copy gc
     fn gc(&mut self) {
-        let old_mallocs = self.mallocs;
-        self.mallocs = 0;
-
         if self.doing_gc {
             panic!("gc during gc, ran out of memory");
         }
         self.doing_gc = true;
 
         // switch to other buffer
-        self.half = !self.half;
+        let old_free = self.free_index;
         self.free_index = 0;
+        self.half = !self.half;
 
         // to-be-moved queue
         let mut q: VecDeque<*mut u8> = VecDeque::new();
@@ -717,12 +688,8 @@ impl MemManager {
         mm_cek_follow();
         self.doing_gc = false;
 
-        println!(
-            "Performed gc, {} -> {} mallocs, freed {} objects",
-            old_mallocs,
-            self.mallocs,
-            old_mallocs - self.mallocs,
-        );
+        let free_mb = (old_free.saturating_sub(self.free_index)) as f64 / 1_000_000f64;
+        println!("Performed gc, freed {:.02} mb", free_mb);
     }
 
     // copy a single object to new memory region during gc
@@ -890,8 +857,6 @@ impl MemManager {
             let needed_bytes = next_free_ptr as usize - free_ptr as usize;
 
             if self.have_free(needed_bytes) {
-                self.mallocs += 1;
-
                 // mark space as used
                 self.free_index += needed_bytes;
                 // write tag
@@ -921,14 +886,6 @@ impl MemManager {
         }
     }
 
-    // fn opposite_mem(&mut self) -> *mut u8 {
-    //     if !self.half {
-    //         self.mem[0..self.size].as_mut_ptr()
-    //     } else {
-    //         self.mem[self.size..2 * self.size].as_mut_ptr()
-    //     }
-    // }
-
     fn obj_tag<T>(ptr: *mut T) -> AllocTag {
         unsafe {
             let tag_ptr_p1 = ptr.cast::<AllocTag>();
@@ -943,14 +900,6 @@ impl MemManager {
             _ => data,
         }
     }
-
-    // fn in_range<T>(&mut self, ptr: *mut T) -> bool {
-    //     let start = self.current_mem() as usize;
-    //     let end = start + self.size;
-    //     let ptr = ptr as usize;
-
-    //     ptr < end && ptr > start
-    // }
 }
 
 #[derive(Copy, Clone)]
@@ -1093,17 +1042,7 @@ impl<T> GcCons<T> {
 impl<T> std::ops::Deref for Gc<T> {
     type Target = T;
     fn deref(&self) -> &T {
-        // if !mm().in_range(self.0) {
-        //     println!("Not in range: {:?}", MemManager::obj_tag(self.0));
-        // }
-
         if MemManager::obj_tag(self.0) == AllocTag::Forwarding {
-            // let p = MemManager::follow_forwarding_ptr(self.0);
-            // println!("{:?}", MemManager::obj_tag(p));
-            // let p = unsafe { &*(p as *mut GcCons<u8>) };
-            // println!("{:?}", MemManager::obj_tag(p.data.0));
-            // panic!();
-
             unsafe {
                 #[allow(mutable_transmutes)]
                 let gc = std::mem::transmute::<_, &mut Self>(self);
@@ -1153,8 +1092,6 @@ impl<T: std::fmt::Debug> GcList<T> {
     const EMPTY: GcList<T> = GcList(None);
 
     fn cons(mut self, mut data: Gc<T>) -> GcList<T> {
-        // dbg!(data.0 as u16);
-
         let (cons, gc) = mm().malloc(AllocTag::GcCons);
         let cons_ptr = cons as *mut GcCons<T>;
         if gc {
@@ -1225,32 +1162,3 @@ impl<T: std::fmt::Debug> std::fmt::Debug for GcList<T> {
         write!(f, "{:?}", self.to_vec())
     }
 }
-
-// #[test]
-// fn list_testing() {
-//     let mut lst: GcList<JVarRef> = GcList::EMPTY;
-//     for s in ["a", "b", "c", "d", "e"] {
-//         let (jvr, _) = mm().malloc(AllocTag::JVarRef);
-//         let jvr = jvr as *mut JVarRef;
-//         unsafe {
-//             ptr::write(jvr, s);
-//         }
-//         let gc = Gc(jvr);
-//         dbg!(gc);
-//         lst = lst.cons(gc);
-//     }
-//     let (h, t) = lst.head_tail().unwrap();
-//     assert_eq!(dbg!(dbg!(h).len()), 1);
-// }
-
-// #[test]
-// fn gc_test() {
-//     let cek = Cek(
-//         jval(JValue::JPair(jvalue!(; JValue::JNum(1)), jvalue!(; JValue::JNum(2)))),
-//         Env::EMPTY,
-//         kret(),
-//     );
-
-//     set_mm_cek(cek);
-//     mm().gc();
-// }

@@ -1,3 +1,8 @@
+// *********
+//
+// After implementing GC for task 64, this module is no longer used
+//
+// *********
 use std::convert::From;
 use std::fmt::Debug;
 use std::iter::FromIterator;
