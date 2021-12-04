@@ -618,7 +618,35 @@ tests = [
                                                ["when", ["=", "x", 10000],
                                                         ["return", "p"]]]]],
            JPair (JNum 10000) (JNum 10000))
+
+        -- Generator tests
+        , (["let", ["evens", ["make-generator", [λ, ["yield"],
+                                                    [[λ, ["i"], ["begin", ["yield", "i"],
+                                                                          ["rec", ["+", "i", 2]]]],
+                                                     0]]]],
+                   generatorList 21 "evens"], listToJv [0,2..40])
+        , (["let", ["fib", ["make-generator", [λ, ["yield"],
+                                                  [[λ, ["n", "nxt"], ["begin", ["yield", "n"],
+                                                                               ["rec", "nxt", ["+", "n", "nxt"]]]],
+                                                   0, 1]]]],
+                   generatorList 10 "fib"], listToJv [0,1,1,2,3,5,8,13,21,34])
+        , (["let*", ["list-iter", [λ, ["lst"],
+                                      ["make-generator", [λ, ["yield"],
+                                                             [[λ, ["l"], ["case", "l",
+                                                                                  ["_", ["begin", ["yield", "empty"],
+                                                                                                  ["rec", "empty"]]],
+                                                                                  ["p", ["begin", ["yield", ["fst", "p"]],
+                                                                                                  ["rec", ["snd", "p"]]]]]],
+                                                              "lst"]]]],
+                     "fives-list", listToSe [0,5..100],
+                     "fives-list-iter", ["list-iter", "fives-list"]],
+                    generatorList 6 "fives-list-iter"], listToJv [0,5..25])
         ]
+
+-- Convenience function to test a generator by making a list of its results
+generatorList :: Integer -> SExpr -> SExpr
+generatorList 0 _ = "empty"
+generatorList n gen = ["cons", [gen], generatorList (n-1) gen]
 
 -- Convenience functions for j5 stdlib testing
 -- Converts a number list to the JValue representation
@@ -628,6 +656,7 @@ listToJv = foldr (\n v -> JInr (JPair (JNum n) v)) (JInl JUnit)
 -- Converts a number list to the SExpr representation
 listToSe :: [Integer] -> SExpr
 listToSe = foldr (\n e -> ["cons", SENum n, e]) "empty"
+
 
 -- Convenience alias to make lambda code shorter
 λ :: SExpr
@@ -738,6 +767,15 @@ addStdlibToSE se = ["let*", stdlib, se]
                                                            ["here", ["newh", "x"]]]]],
                                                 ["begin0", ["body"],
                                                            ["set-box!", "last-handler", "oldh"]]]]]]
+             , "make-generator", [λ, ["f"],
+                                     ["let", ["f-in-progress", ["box", ["inl", "false"]]],
+                                             [λ, [],
+                                                 ["letcc", "local",
+                                                           ["case", ["unbox", "f-in-progress"],
+                                                                    ["_", ["let", ["current", ["box", "local"]],
+                                                                                  ["f", [λ, ["ans"], ["begin", ["set-box!", "current", ["letcc", "next", ["begin", ["set-box!", "f-in-progress", ["inr", "next"]], [["unbox", "current"], "ans"]]]]
+                                                                                                                ] ]]]],
+                                                                    ["resume", ["resume", "local"]]]]]]]
              ]
 
 -- Takes an sexpr and puts it into the task 35
@@ -900,8 +938,8 @@ runCommand :: String -> IO ()
 runCommand s = spawnCommand s >>= waitForProcess >> return ()
 
 main :: IO ()
--- main = forM_ (drop 125 tests) runTestInLL
-main = forM_ tests runTestInLL
+main = forM_ (drop 126 tests) runTestInLL
+-- main = forM_ tests runTestInLL
 
 -- Enable conversion from number literals into SENum
 -- Only fromInteger and negate are needed so the rest is left undefined
