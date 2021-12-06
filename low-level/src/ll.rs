@@ -81,6 +81,8 @@ pub enum JValue {
     JPrimitiveQ,
     JFunctionArity,
     JPrimitiveArity,
+
+    JPrint
 }
 
 macro_rules! jexpr {
@@ -541,9 +543,14 @@ fn run_delta_slice(vals: &[JValue]) -> JExpr {
             | JSetBox => 2,
             JInlOp | JInrOp | JFst | JSnd | JBox | JUnbox | JNumberQ | JBoxQ | JBooleanQ
             | JPairQ | JUnitQ | JInlQ | JInrQ | JContinuationQ | JFunctionQ | JPrimitiveQ
-            | JFunctionArity | JPrimitiveArity => 1,
+            | JFunctionArity | JPrimitiveArity | JPrint => 1,
             _ => return abort_str!("primitive-arity called on non-primitive"),
         }),
+
+        [JPrint, v] => {
+            println!("{:?}", v);
+            JUnit
+        }
         _ => return abort_str!("delta hit bottom case"),
     };
 

@@ -29,6 +29,7 @@ data JValue = JNum Integer
             | JSigma JValue | JBox | JUnbox | JSetBox
             | JNumberQ | JBoxQ | JBooleanQ | JPairQ | JUnitQ | JInlQ | JInrQ | JContinuationQ
             | JFunctionQ | JPrimitiveQ | JFunctionArity | JPrimitiveArity
+            | JPrint
             deriving (Show, Eq)
 
 type JVarRef = String
@@ -80,6 +81,7 @@ pp (JVal val) = case val of
     JPrimitiveQ -> "primitive?"
     JFunctionArity -> "function-arity"
     JPrimitiveArity -> "primitive-arity"
+    JPrint -> "print"
 pp (JIf cond e1 e2) = "(if " ++ pp cond ++ " " ++ pp e1 ++ " " ++ pp e2 ++ ")"
 pp (JApply e0 en) = let ppEn = if null en then "" else " " ++ unwords (map pp en)
                     in "(" ++ pp e0 ++ ppEn ++ ")"
@@ -203,8 +205,8 @@ desugar (SESym s) = case s of
     "inr" -> JVal JInrOp
     "pair" -> JVal JPairOp
     "unit" -> JVal JUnit
-    "fst" -> JVal JFst
-    "snd" -> JVal JSnd
+    "unsafe-fst" -> JVal JFst
+    "unsafe-snd" -> JVal JSnd
     "string=?" -> JVal JStrEq
     "box" -> JVal JBox
     "unsafe-unbox" -> JVal JUnbox
@@ -221,6 +223,7 @@ desugar (SESym s) = case s of
     "primitive?" -> JVal JPrimitiveQ
     "function-arity" -> JVal JFunctionArity
     "primitive-arity" -> JVal JPrimitiveArity
+    "print" -> JVal JPrint
     -- Starting with # -> string
     ('#':s) -> JVal $ JString s
     -- Anything else -> var ref
@@ -269,7 +272,6 @@ j7toj6 = trans []
             (JSet b e) -> JApply (JVal JSetBox) [JVarRef b, trans' e]
             (JAbort e) -> JAbort $ trans' e
             (JCallCC e) -> JCallCC (trans' e)
-
 
     modifiedSet :: JExpr -> [JVarRef]
     modifiedSet (JSet x e)      = x : modifiedSet e
@@ -683,44 +685,64 @@ addStdlibToSE se = ["let*", stdlib, se]
                                                             ["if", ["unsafe-apply", "continuation?", "x"],
                                                                    1,
                                                                    ["unsafe-apply", "abort", "#procedure-arity called on non-procedure"]]]]]
+
+             -- J10 stdlib additions (put here because stdlib is let*
+             -- and they're needed for assert-safe-call)
              , "last-handler", ["unsafe-apply", "box", [λ, ["x"], ["abort", "x"]]]
              , "throw", [λ, ["v"], ["unsafe-apply", ["unsafe-apply", "unsafe-unbox", "last-handler"], "v"]]
+             , "trycatch*", [λ, ["body", "newh"],
+                                ["let", ["oldh", ["unbox", "last-handler"]],
+                                        ["letcc", "here",
+                                            ["begin",
+                                                ["set-box!", "last-handler",
+                                                    [λ, ["x"],
+                                                       ["begin",
+                                                           ["set-box!", "last-handler", "oldh"],
+                                                           ["here", ["newh", "x"]]]]],
+                                                ["begin0", ["body"],
+                                                           ["set-box!", "last-handler", "oldh"]]]]]]
+
              , "assert-safe-call", [λ, ["p", "ac"], ["if", ["unsafe-apply", "procedure?", "p"],
                                                            ["if", ["unsafe-apply", "unsafe-=", ["unsafe-apply", "procedure-arity", "p"], "ac"],
                                                                   "unit",
                                                                   ["unsafe-apply", "throw", "#apply with wrong # args"]],
                                                            ["unsafe-apply", "throw", "#apply on non-procedure"]]]
-             , "+",  [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
-                                            ["unsafe-+", "x", "y"],
-                                            ["throw", "#+ given non-numbers"]]]
-             , "-",  [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
-                                            ["unsafe--", "x", "y"],
-                                            ["throw", "#- given non-numbers"]]]
-             , "*",  [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
-                                            ["unsafe-*", "x", "y"],
-                                            ["throw", "#* given non-numbers"]]]
-             , "/",  [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
-                                            ["unsafe-/", "x", "y"],
-                                            ["throw", "#/ given non-numbers"]]]
-             , "=",  [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
-                                            ["unsafe-=", "x", "y"],
-                                            ["throw", "#= given non-numbers"]]]
-             , "<",  [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
-                                            ["unsafe-<", "x", "y"],
-                                            ["throw", "#< given non-numbers"]]]
-             , ">",  [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
-                                            ["unsafe->", "x", "y"],
-                                            ["throw", "#> given non-numbers"]]]
-             , "<=",  [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
-                                             ["unsafe-<=", "x", "y"],
-                                             ["throw", "#<= given non-numbers"]]]
-             , ">=",  [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
-                                             ["unsafe->=", "x", "y"],
-                                             ["throw", "#>= given non-numbers"]]]
-             , "unbox",  [λ, ["b"], ["if", ["box?", "b"],
-                                           ["unsafe-unbox", "b"],
-                                           ["throw", "#unbox given non-box"]]]
-
+             , "+", [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
+                                           ["unsafe-+", "x", "y"],
+                                           ["throw", "#+ given non-numbers"]]]
+             , "-", [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
+                                           ["unsafe--", "x", "y"],
+                                           ["throw", "#- given non-numbers"]]]
+             , "*", [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
+                                           ["unsafe-*", "x", "y"],
+                                           ["throw", "#* given non-numbers"]]]
+             , "/", [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
+                                           ["unsafe-/", "x", "y"],
+                                           ["throw", "#/ given non-numbers"]]]
+             , "=", [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
+                                           ["unsafe-=", "x", "y"],
+                                           ["throw", "#= given non-numbers"]]]
+             , "<", [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
+                                           ["unsafe-<", "x", "y"],
+                                           ["throw", "#< given non-numbers"]]]
+             , ">", [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
+                                           ["unsafe->", "x", "y"],
+                                           ["throw", "#> given non-numbers"]]]
+             , "<=", [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
+                                            ["unsafe-<=", "x", "y"],
+                                            ["throw", "#<= given non-numbers"]]]
+             , ">=", [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
+                                            ["unsafe->=", "x", "y"],
+                                            ["throw", "#>= given non-numbers"]]]
+             , "unbox", [λ, ["b"], ["if", ["box?", "b"],
+                                          ["unsafe-unbox", "b"],
+                                          ["throw", "#unbox given non-box"]]]
+             , "fst", [λ, ["p"], ["if", ["pair?", "p"],
+                                        ["unsafe-fst", "p"],
+                                        ["throw", "#fst given non-pair"]]]
+             , "snd", [λ, ["p"], ["if", ["pair?", "p"],
+                                        ["unsafe-snd", "p"],
+                                        ["throw", "#snd given non-pair"]]]
              -- nat-unfold
              , "nat-unfold", [λ, "nat-unf", ["f", "z", "n"],
                                  ["if", ["=", "n", 0],
@@ -755,27 +777,47 @@ addStdlibToSE se = ["let*", stdlib, se]
              , "just", "inr"
              , "is-just?", [λ, ["o"], ["case", "o", ["_", "false"], ["_", "true"]]]
              , "is-nothing?", [λ, ["o"], ["not", ["is-just?", "o"]]]
-             -- J10 stdlib additions
-             , "trycatch*", [λ, ["body", "newh"],
-                                ["let", ["oldh", ["unbox", "last-handler"]],
-                                        ["letcc", "here",
-                                            ["begin",
-                                                ["set-box!", "last-handler",
-                                                    [λ, ["x"],
-                                                       ["begin",
-                                                           ["set-box!", "last-handler", "oldh"],
-                                                           ["here", ["newh", "x"]]]]],
-                                                ["begin0", ["body"],
-                                                           ["set-box!", "last-handler", "oldh"]]]]]]
+
+             -- Task 74 generator
              , "make-generator", [λ, ["f"],
                                      ["let", ["f-in-progress", ["box", ["inl", "false"]]],
                                              [λ, [],
                                                  ["letcc", "local",
                                                            ["case", ["unbox", "f-in-progress"],
                                                                     ["_", ["let", ["current", ["box", "local"]],
-                                                                                  ["f", [λ, ["ans"], ["begin", ["set-box!", "current", ["letcc", "next", ["begin", ["set-box!", "f-in-progress", ["inr", "next"]], [["unbox", "current"], "ans"]]]]
-                                                                                                                ] ]]]],
+                                                                                  ["f", [λ, ["ans"],
+                                                                                            ["set-box!",
+                                                                                                "current",
+                                                                                                    ["letcc", "next",
+                                                                                                        ["begin",
+                                                                                                            ["set-box!", "f-in-progress", ["inr", "next"]],
+                                                                                                            [["unbox", "current"], "ans"]]]]]]]],
                                                                     ["resume", ["resume", "local"]]]]]]]
+
+             , "ready-q", "empty"
+             , "spawn!", [λ, ["f"], ["set!", "ready-q", ["cons", "f", "ready-q"]]]
+             , "exit!", [λ, [], ["case", "ready-q",
+                                         ["_", "unit"],
+                                         ["p", ["begin", ["set!", "ready-q", ["snd", "p"]],
+                                                         [["fst", "p"]]]]]]
+             , "make-channel", [λ, [], ["box", "empty"]]
+             , "first*", [λ, ["l", "d"], ["case", "l", ["_", "d"], ["p", ["fst", "p"]]]]
+             , "rest*", [λ, ["l", "d"], ["case", "l", ["_", "d"], ["p", ["snd", "p"]]]]
+             , "send!", [λ, ["chb", "v"], ["case", ["unbox", "chb"],
+                                                   ["_", ["letcc", "k",
+                                                                   ["begin",
+                                                                    ["set-box!", "chb",
+                                                                                 ["cons", ["inl", ["pair", "v", "k"]],
+                                                                                          ["unbox", "chb"]]],
+                                                                    ["exit!"]]]],
+                                                   ["k", ["begin", ["spawn!", [λ, [], ["k", "v"]]],
+                                                                   ["set-box!", "chb",
+                                                                                ["rest*", ["unbox", "chb"], "empty"]]]]]]
+             -- , "recv!", [λ, ["chb"], ["let", ["chl", ["unbox", "chb"]],
+             --                                 ["case", ["first*", "chl", ["inr", "false"]],
+             --                                          ["p", ["begin", ["let", ["v", ["fst", "p"],
+             --                                                                   "k", ["snd", "p"]],
+             --                                                                  ["spawn!", []]]]]]]
              ]
 
 -- Takes an sexpr and puts it into the task 35
@@ -877,6 +919,7 @@ jvToLL v = "JValue::" ++ case v of
     JPrimitiveQ -> "JPrimitiveQ"
     JFunctionArity -> "JFunctionArity"
     JPrimitiveArity -> "JPrimitiveArity"
+    JPrint -> "JPrint"
 
 commaSep :: [String] -> String
 commaSep  = intercalate ", "
