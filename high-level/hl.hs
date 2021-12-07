@@ -803,7 +803,7 @@ addStdlibToSE se = ["let*", stdlib, se]
              , "make-channel", [λ, [], ["box", "empty"]]
              , "first*", [λ, ["l", "d"], ["case", "l", ["_", "d"], ["p", ["fst", "p"]]]]
              , "rest*", [λ, ["l", "d"], ["case", "l", ["_", "d"], ["p", ["snd", "p"]]]]
-             , "send!", [λ, ["chb", "v"], ["case", ["unbox", "chb"],
+             , "send!", [λ, ["chb", "v"], ["case", ["first*", ["unbox", "chb"], ["inl", "false"]],
                                                    ["_", ["letcc", "k",
                                                                    ["begin",
                                                                     ["set-box!", "chb",
@@ -813,11 +813,18 @@ addStdlibToSE se = ["let*", stdlib, se]
                                                    ["k", ["begin", ["spawn!", [λ, [], ["k", "v"]]],
                                                                    ["set-box!", "chb",
                                                                                 ["rest*", ["unbox", "chb"], "empty"]]]]]]
-             -- , "recv!", [λ, ["chb"], ["let", ["chl", ["unbox", "chb"]],
-             --                                 ["case", ["first*", "chl", ["inr", "false"]],
-             --                                          ["p", ["begin", ["let", ["v", ["fst", "p"],
-             --                                                                   "k", ["snd", "p"]],
-             --                                                                  ["spawn!", []]]]]]]
+             , "recv!", [λ, ["chb"], ["let", ["chl", ["unbox", "chb"]],
+                                             ["case", ["first*", "chl", ["inr", "false"]],
+                                                      ["p", ["let", ["v", ["fst", "p"],
+                                                                     "k", ["snd", "p"]],
+                                                                    ["begin",
+                                                                     ["spawn!", [λ, [], ["k", "unit"]]],
+                                                                     ["set-box!", "chb", ["rest*", "chl", "empty"]]],
+                                                                     "v"]],
+                                                      ["_", ["letcc", "k", ["begin",
+                                                                            ["set-box!", "chb", ["cons", ["inr", "k"],
+                                                                                                         "chl"]],
+                                                                            ["exit!"]]]]]]]
              ]
 
 -- Takes an sexpr and puts it into the task 35
