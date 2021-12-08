@@ -548,7 +548,7 @@ fn run_delta_slice(vals: &[JValue]) -> JExpr {
         }),
 
         [JPrint, v] => {
-            println!("{:?}", v);
+            println!("[JPrint] {:?}", v);
             JUnit
         }
         _ => return abort_str!("delta hit bottom case"),

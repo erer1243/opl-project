@@ -643,6 +643,76 @@ tests = [
                      "fives-list", listToSe [0,5..100],
                      "fives-list-iter", ["list-iter", "fives-list"]],
                     generatorList 6 "fives-list-iter"], listToJv [0,5..25])
+
+        -- Message passing concurrency tests
+        , (["begin",
+            ["spawn!", [λ, [], ["begin", ["print", "#first spawned thread"], ["exit!"]]]],
+            ["spawn!", [λ, [], ["begin", ["print", "#second spawned thread"], ["exit!"]]]],
+            ["exit!"]], JUnit)
+        , (["let", ["ch", ["make-channel"]], ["begin",
+                                              ["spawn!", [λ, [], ["begin", ["send!", "ch", "#Sent over chan"],
+                                                                           ["exit!"]]]],
+                                              ["recv!", "ch"]]], JString "Sent over chan")
+        , (["let", ["ch", ["make-channel"]], ["begin",
+                                              ["spawn!", [λ, [], ["begin", ["recv!", "ch"], "#First recv returned"]]],
+                                              ["recv!", "ch"]]], JString "First recv returned")
+        , (["let", ["ch", ["make-channel"]], ["begin",
+                                              ["spawn!", [λ, [], ["let", ["n", 0],
+                                                                         ["while", "true",
+                                                                                   ["send!", "ch", "n"],
+                                                                                   ["set!", "n", ["+", "n", 1]]]]]],
+                                              ["+", ["recv!", "ch"],
+                                                    ["recv!", "ch"],
+                                                    ["recv!", "ch"],
+                                                    ["recv!", "ch"]]]], JNum 6)
+        , (["let*", ["pch", ["make-channel"],
+                     "io-thread-print", [λ, ["v"], ["send!", "pch", "v"]]],
+                    ["begin",
+                     -- spawn io thread
+                     ["spawn!", [λ, [], ["while", "true", ["print", ["recv!", "pch"]]]]],
+                     -- spawn some side threads
+                     ["spawn!", [λ, [], ["begin", ["io-thread-print", "#message from side thread 1"],
+                                                  ["exit!"]]]],
+                     ["spawn!", [λ, [], ["begin", ["io-thread-print", "#message from side thread 2"],
+                                                  ["exit!"]]]],
+                     ["io-thread-print", "#message from main thread"]]], JUnit)
+        , (["let*", ["math-in", ["make-channel"],
+                     "math-out", ["make-channel"],
+                     "mathify", [λ, ["n"], ["begin", ["send!", "math-in", "n"],
+                                                     ["recv!", "math-out"]]]],
+                   ["begin",
+                    -- Spawn math thread, multiplies inputs by 2/3
+                    ["spawn!", [λ, [], ["while", "true",
+                                                 ["let*", ["n", ["recv!", "math-in"],
+                                                           "ans", ["/", ["*", 2, "n"], 3] ],
+                                                          ["send!", "math-out", "ans"]]]]],
+                    -- Do some mixed-thread math
+                    ["+", ["mathify", 6], ["mathify", 3], ["mathify", 12]]]], JNum 14)
+        , (["begin", [[["make-lock"]]], 5], JNum 5)
+        , (["let", ["lk", ["make-lock"]], ["begin",
+                   ["spawn!", [λ, [], ["abort", "#deadlock"]]], -- without this being abort the deadlock
+                                                                -- causes inf loop in ll implementation
+                   ["lk"],
+                   ["lk"],
+                   ["abort", "#not deadlock"]]], JString "deadlock")
+        , (["let", ["lk", ["make-lock"]], ["begin",
+                   [["lk"]],
+                   ["lk"],
+                   "#not deadlock"]], JString "not deadlock")
+        , (["let", ["fut", ["make-future", [λ, [], ["+", 20, 30]]]],
+                   ["fut"]], JNum 50)
+        , (["let*", ["f1", ["make-future", [λ, [], ["begin", ["print", "#future 1 running"], ["+", 2, 3]]]],
+                     "f2", ["make-future", [λ, [], ["begin", ["print", "#future 2 running"], ["+", 10, 20]]]],
+                     "f3", ["make-future", [λ, [], ["begin", ["print", "#future 3 running"], ["+", ["f1"], ["f2"]]]]]],
+                     ["f3"]], JNum 35)
+        , (["let", ["even-fut", ["make-generator", [λ, ["yield"],
+                                                       [[λ, ["n"], ["begin",
+                                                                    ["yield", ["make-future", [λ, [], ["*", 2, "n"]]]],
+                                                                    ["rec", ["+", "n", 1]]]], 0]]]],
+                   ["let", ["zero", ["even-fut"],
+                            "two", ["even-fut"],
+                            "four", ["even-fut"]],
+                           ["+", ["zero"], ["two"], ["four"]]]], JNum 6)
         ]
 
 -- Convenience function to test a generator by making a list of its results
@@ -706,7 +776,8 @@ addStdlibToSE se = ["let*", stdlib, se]
                                                            ["if", ["unsafe-apply", "unsafe-=", ["unsafe-apply", "procedure-arity", "p"], "ac"],
                                                                   "unit",
                                                                   ["unsafe-apply", "throw", "#apply with wrong # args"]],
-                                                           ["unsafe-apply", "throw", "#apply on non-procedure"]]]
+                                                           ["unsafe-apply", "throw", "#apply on non-procedure"]
+                                                           ]]
              , "+", [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
                                            ["unsafe-+", "x", "y"],
                                            ["throw", "#+ given non-numbers"]]]
@@ -793,7 +864,7 @@ addStdlibToSE se = ["let*", stdlib, se]
                                                                                                             ["set-box!", "f-in-progress", ["inr", "next"]],
                                                                                                             [["unbox", "current"], "ans"]]]]]]]],
                                                                     ["resume", ["resume", "local"]]]]]]]
-
+             -- Concurrency
              , "ready-q", "empty"
              , "spawn!", [λ, ["f"], ["set!", "ready-q", ["cons", "f", "ready-q"]]]
              , "exit!", [λ, [], ["case", "ready-q",
@@ -988,7 +1059,7 @@ runCommand :: String -> IO ()
 runCommand s = spawnCommand s >>= waitForProcess >> return ()
 
 main :: IO ()
-main = forM_ (drop 126 tests) runTestInLL
+main = forM_ (drop 129 tests) runTestInLL
 -- main = forM_ tests runTestInLL
 
 -- Enable conversion from number literals into SENum
