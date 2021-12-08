@@ -776,8 +776,7 @@ addStdlibToSE se = ["let*", stdlib, se]
                                                            ["if", ["unsafe-apply", "unsafe-=", ["unsafe-apply", "procedure-arity", "p"], "ac"],
                                                                   "unit",
                                                                   ["unsafe-apply", "throw", "#apply with wrong # args"]],
-                                                           ["unsafe-apply", "throw", "#apply on non-procedure"]
-                                                           ]]
+                                                           ["unsafe-apply", "throw", "#apply on non-procedure"]]]
              , "+", [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
                                            ["unsafe-+", "x", "y"],
                                            ["throw", "#+ given non-numbers"]]]
@@ -1081,8 +1080,8 @@ runCommand :: String -> IO ()
 runCommand s = spawnCommand s >>= waitForProcess >> return ()
 
 main :: IO ()
-main = forM_ (drop 129 tests) runTestInLL
--- main = forM_ tests runTestInLL
+-- main = forM_ (drop 129 tests) runTestInLL
+main = forM_ tests runTestInLL
 
 -- Enable conversion from number literals into SENum
 -- Only fromInteger and negate are needed so the rest is left undefined
