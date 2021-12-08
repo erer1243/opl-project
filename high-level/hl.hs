@@ -911,6 +911,13 @@ addStdlibToSE se = ["let*", stdlib, se]
                                                                                [λ, [], ["send!", "uch", "unit"]]],
                                                                      ["recv!", "uch"]]]]]],
                                              ["lock!", "lch"]]]]
+             -- Futures
+             , "make-future", [λ, ["f"], ["let", ["rch", ["make-channel"]],
+                                                 ["begin",
+                                                  ["spawn!", [λ, [], ["let", ["v", ["f"]],
+                                                                             ["while", "true",
+                                                                                        ["send!", "rch", "v"]]]]],
+                                                  [λ, [], ["recv!", "rch"]]]]]
              ]
 
 -- Takes an sexpr and puts it into the task 35
