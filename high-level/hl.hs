@@ -890,12 +890,27 @@ addStdlibToSE se = ["let*", stdlib, se]
                                                                      "k", ["snd", "p"]],
                                                                     ["begin",
                                                                      ["spawn!", [λ, [], ["k", "unit"]]],
-                                                                     ["set-box!", "chb", ["rest*", "chl", "empty"]]],
-                                                                     "v"]],
+                                                                     ["set-box!", "chb", ["rest*", "chl", "empty"]],
+                                                                     "v"]]],
                                                       ["_", ["letcc", "k", ["begin",
                                                                             ["set-box!", "chb", ["cons", ["inr", "k"],
                                                                                                          "chl"]],
                                                                             ["exit!"]]]]]]]
+             -- Locks
+             , "lock!", [λ, ["lock-ch"], [λ, [], ["let", ["rch", ["make-channel"]],
+                                                         ["begin",
+                                                          ["send!", "lock-ch", "rch"],
+                                                          ["recv!", "rch"]]]]]
+             , "make-lock", [λ, [], ["let", ["lch", ["make-channel"]],
+                                            ["begin",
+                                             ["spawn!", [λ, [],
+                                                            ["while", "true",
+                                                                ["let", ["uch", ["make-channel"]],
+                                                                    ["begin",
+                                                                     ["send!", ["recv!", "lch"],
+                                                                               [λ, [], ["send!", "uch", "unit"]]],
+                                                                     ["recv!", "uch"]]]]]],
+                                             ["lock!", "lch"]]]]
              ]
 
 -- Takes an sexpr and puts it into the task 35
