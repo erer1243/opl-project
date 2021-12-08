@@ -760,23 +760,13 @@ addStdlibToSE se = ["let*", stdlib, se]
              -- and they're needed for assert-safe-call)
              , "last-handler", ["unsafe-apply", "box", [λ, ["x"], ["abort", "x"]]]
              , "throw", [λ, ["v"], ["unsafe-apply", ["unsafe-apply", "unsafe-unbox", "last-handler"], "v"]]
-             , "trycatch*", [λ, ["body", "newh"],
-                                ["let", ["oldh", ["unbox", "last-handler"]],
-                                        ["letcc", "here",
-                                            ["begin",
-                                                ["set-box!", "last-handler",
-                                                    [λ, ["x"],
-                                                       ["begin",
-                                                           ["set-box!", "last-handler", "oldh"],
-                                                           ["here", ["newh", "x"]]]]],
-                                                ["begin0", ["body"],
-                                                           ["set-box!", "last-handler", "oldh"]]]]]]
 
              , "assert-safe-call", [λ, ["p", "ac"], ["if", ["unsafe-apply", "procedure?", "p"],
                                                            ["if", ["unsafe-apply", "unsafe-=", ["unsafe-apply", "procedure-arity", "p"], "ac"],
                                                                   "unit",
                                                                   ["unsafe-apply", "throw", "#apply with wrong # args"]],
                                                            ["unsafe-apply", "throw", "#apply on non-procedure"]]]
+             -- Safe stdlib operations
              , "+", [λ, ["x", "y"], ["if", ["and", ["number?", "x"], ["number?", "y"]],
                                            ["unsafe-+", "x", "y"],
                                            ["throw", "#+ given non-numbers"]]]
@@ -847,6 +837,19 @@ addStdlibToSE se = ["let*", stdlib, se]
              , "just", "inr"
              , "is-just?", [λ, ["o"], ["case", "o", ["_", "false"], ["_", "true"]]]
              , "is-nothing?", [λ, ["o"], ["not", ["is-just?", "o"]]]
+
+             -- Remaining J10 additions that use some above functions
+             , "trycatch*", [λ, ["body", "newh"],
+                                ["let", ["oldh", ["unbox", "last-handler"]],
+                                        ["letcc", "here",
+                                            ["begin",
+                                                ["set-box!", "last-handler",
+                                                    [λ, ["x"],
+                                                       ["begin",
+                                                           ["set-box!", "last-handler", "oldh"],
+                                                           ["here", ["newh", "x"]]]]],
+                                                ["begin0", ["body"],
+                                                           ["set-box!", "last-handler", "oldh"]]]]]]
 
              -- Task 74 generator
              , "make-generator", [λ, ["f"],
